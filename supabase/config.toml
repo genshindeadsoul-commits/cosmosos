@@ -1,0 +1,5 @@
+# Only these two are called without a Supabase user JWT (see comments in each index.ts).
+[functions.oauth-callback]
+verify_jwt = false
+[functions.health-ingest]
+verify_jwt = false
