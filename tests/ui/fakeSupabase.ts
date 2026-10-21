@@ -4,6 +4,7 @@ export const db: Record<string, Record<string, Row[]>> = {};   // userId -> tabl
 export const fnCalls: { name: string; body: any }[] = [];
 export const fnHandlers: Record<string, (body: any) => unknown> = {};
 export const failWrites = { on: false };
+export const oauthCalls: unknown[] = [];
 export const calls: { op: string; table: string; n?: number }[] = [];
 let currentUser: any = null;
 const listeners = new Set<(e: string, s: any) => void>();
@@ -60,7 +61,7 @@ export const fakeClient = {
   auth: {
     getSession: async () => ({ data: { session: session() }, error: null }),
     onAuthStateChange: (cb: any) => { listeners.add(cb); return { data: { subscription: { unsubscribe: () => listeners.delete(cb) } } }; },
-    signInWithOAuth: async () => ({ error: null }),
+    signInWithOAuth: async (o: unknown) => { oauthCalls.push(o); return { error: null }; },
     signOut: async () => { currentUser = null; emit('SIGNED_OUT'); return { error: null }; },
   },
   __listenerCount: () => listeners.size,

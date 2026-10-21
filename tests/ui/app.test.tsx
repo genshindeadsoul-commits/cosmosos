@@ -5,7 +5,7 @@ import { render, screen, waitFor, cleanup, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import * as fake from './fakeSupabase';
 
-vi.mock('../../src/lib/supabase', () => ({ supabase: fake.fakeClient, isSupabaseConfigured: true, requireSupabase: () => fake.fakeClient }));
+vi.mock('../../src/lib/supabase', () => ({ supabase: fake.fakeClient, isSupabaseConfigured: true, supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'anon', requireSupabase: () => fake.fakeClient }));
 import App from '../../src/App';
 
 const REAL_LOCATION = Object.getOwnPropertyDescriptor(window, 'location')!;
@@ -14,6 +14,35 @@ const NAV = ['Dashboard', 'Notes', 'Tables', 'Expenses', 'Fitness', 'Goals & Hab
 beforeEach(() => { Object.defineProperty(window, 'location', REAL_LOCATION); fake.failWrites.on = false; window.history.replaceState({}, '', '/'); fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
 
 describe('auth gate', () => {
+  it('Google provider disabled in Supabase => readable setup message, and no redirect to the raw JSON error', async () => {
+    fake.setUser(null); fake.oauthCalls.length = 0;
+    const f = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ external: { google: false, email: true } }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText('Continue with Google'));
+    expect(await screen.findByText(/Google sign-in is not enabled for this Supabase project/)).toBeTruthy();
+    expect(fake.oauthCalls).toHaveLength(0);
+    expect(String(f.mock.calls[0][0])).toBe('https://x.supabase.co/auth/v1/settings');
+    f.mockRestore();
+  });
+  it('Google provider enabled => proceeds to OAuth normally', async () => {
+    fake.setUser(null); fake.oauthCalls.length = 0;
+    const f = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ external: { google: true } }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText('Continue with Google'));
+    await waitFor(() => expect(fake.oauthCalls).toHaveLength(1));
+    f.mockRestore();
+  });
+  it('settings endpoint unreachable => still attempts sign-in instead of blocking', async () => {
+    fake.setUser(null); fake.oauthCalls.length = 0;
+    const f = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByText('Continue with Google'));
+    await waitFor(() => expect(fake.oauthCalls).toHaveLength(1));
+    f.mockRestore();
+  });
   it('shows login (and no private UI) with no session', async () => {
     fake.setUser(null);
     render(<App />);

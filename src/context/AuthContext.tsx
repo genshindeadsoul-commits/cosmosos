@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 
 interface AuthContextType {
   configured: boolean;
@@ -69,6 +69,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithGoogle = useCallback(async () => {
     if (!supabase) { setAuthError('Supabase is not configured.'); return; }
     setAuthError(null);
+    // Pre-flight: if the provider is disabled, Supabase answers the redirect with a raw JSON error page.
+    // Its public settings endpoint tells us first, so we can show a readable message instead.
+    try {
+      const res = await fetch(`${supabaseUrl}/auth/v1/settings`, { headers: { apikey: supabaseAnonKey ?? '' } });
+      if (res.ok) {
+        const settings = await res.json();
+        if (settings?.external && settings.external.google === false) {
+          setAuthError('Google sign-in is not enabled for this Supabase project. In Supabase go to Authentication → Sign In / Providers → Google, turn it on, and paste your Google Client ID and Secret (docs/SETUP.md, section 2).');
+          return;
+        }
+      }
+    } catch { /* offline or blocked: fall through and let the normal flow report the problem */ }
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin },  // identity only; Gmail etc. need separate consent

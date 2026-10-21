@@ -30,6 +30,14 @@ The app has real URLs (`/notes`, `/tasks`, ...), so the host must serve `index.h
 - **Other hosts:** add an equivalent "fallback to index.html" rewrite.
 - After deploying, add the live URL to Supabase → Authentication → URL Configuration (Site URL and Redirect URLs) and to the Google OAuth client's authorized JavaScript origins, and set `APP_URL` / `ALLOWED_ORIGINS` for the functions (section 5a).
 
+### Troubleshooting sign-in
+| Symptom | Cause / fix |
+|---|---|
+| `Unsupported provider: provider is not enabled` (400 JSON page, or the in-app "Google sign-in is not enabled" message) | Supabase → Authentication → Sign In / Providers → **Google** → enable, paste Client ID and Client Secret, save. |
+| `redirect_uri_mismatch` (Google error page) | The Google OAuth client must list exactly `https://<PROJECT_REF>.supabase.co/auth/v1/callback` under Authorized redirect URIs. |
+| `Access blocked: app has not completed verification` / `access_denied` | The consent screen is in Testing: add your Google account under **Test users**. |
+| Lands back on the login screen with a redirect error | Add the app's exact URL to Supabase → Authentication → URL Configuration → Redirect URLs. |
+
 ## 3. First admin
 Admins are rows in `public.app_admins`; no client can write that table. After you have signed in once, run in the SQL Editor (service role / dashboard):
 ```sql
