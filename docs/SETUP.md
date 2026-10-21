@@ -22,7 +22,13 @@ Until each step is done, the matching feature stays in its honest "Needs setup" 
 Scopes used for login: `openid email profile` only. Gmail/Calendar/Drive/Sheets consent is separate (section 5).
 
 ## 2b. Hosting: single-page-app fallback
-The app now has real URLs (`/notes`, `/tasks`, ...), so your host must serve `index.html` for unknown paths or a refresh on `/notes` will 404. `vercel.json` and `public/_redirects` (Netlify/Cloudflare Pages) are included; on any other host add the equivalent rewrite.
+The app has real URLs (`/notes`, `/tasks`, ...), so the host must serve `index.html` for unknown paths or a refresh on `/notes` will 404.
+
+- **Cloudflare (Workers static assets):** `wrangler.jsonc` is included and sets `not_found_handling: "single-page-application"`. Deploy command: `npx wrangler deploy` (build command: `npm run build`). **Do not add a `_redirects` catch-all** (`/* /index.html 200`): Cloudflare rejects it as an infinite loop (error 100324).
+- **Build-time variables (required):** in the Cloudflare project's *Build* settings add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Vite bakes them into the bundle at build time; if they're missing the deployed app shows "Configuration required".
+- **Vercel:** `vercel.json` is included.
+- **Other hosts:** add an equivalent "fallback to index.html" rewrite.
+- After deploying, add the live URL to Supabase → Authentication → URL Configuration (Site URL and Redirect URLs) and to the Google OAuth client's authorized JavaScript origins, and set `APP_URL` / `ALLOWED_ORIGINS` for the functions (section 5a).
 
 ## 3. First admin
 Admins are rows in `public.app_admins`; no client can write that table. After you have signed in once, run in the SQL Editor (service role / dashboard):

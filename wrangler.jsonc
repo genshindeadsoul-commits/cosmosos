@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cosmosos",
+  "compatibility_date": "2026-10-19",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist",
+    // Serve index.html for unknown paths so /notes, /tasks, ... survive a refresh.
+    // (Do NOT also add a public/_redirects catch-all: Cloudflare rejects it as an infinite loop.)
+    "not_found_handling": "single-page-application"
+  }
+}
