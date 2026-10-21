@@ -77,7 +77,7 @@ const MainContent: React.FC = () => {
       <WhatsAppModal />
       <GmailModal />
 
-      <div className="fixed bottom-5 left-5 z-50 flex flex-col gap-2 pointer-events-none max-w-sm">
+      <div className="fixed bottom-5 left-4 right-4 sm:right-auto sm:left-5 z-50 flex flex-col gap-2 pointer-events-none sm:max-w-sm">
         {toasts.map((toast) => (
           <div
             key={toast.id}

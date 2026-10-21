@@ -21,6 +21,9 @@ Until each step is done, the matching feature stays in its honest "Needs setup" 
 4. Supabase → Authentication → URL Configuration: set **Site URL** to production, and add `http://localhost:3000` and the production URL to **Redirect URLs**.
 Scopes used for login: `openid email profile` only. Gmail/Calendar/Drive/Sheets consent is separate (section 5).
 
+## 2b. Hosting: single-page-app fallback
+The app now has real URLs (`/notes`, `/tasks`, ...), so your host must serve `index.html` for unknown paths or a refresh on `/notes` will 404. `vercel.json` and `public/_redirects` (Netlify/Cloudflare Pages) are included; on any other host add the equivalent rewrite.
+
 ## 3. First admin
 Admins are rows in `public.app_admins`; no client can write that table. After you have signed in once, run in the SQL Editor (service role / dashboard):
 ```sql
@@ -92,3 +95,9 @@ There is no browser API for Health Connect. In Settings → Health Connect, gene
 | Two-way Calendar sync | One-way import only; deletions in Google are not mirrored |
 | Health companion Android app | Out of scope; ingest API provided |
 | Gmail attachments download, send, or label edits | Read-only scope |
+
+## Known limits (by design or untested)
+- **Switching accounts from outside the app** (e.g. signing in as someone else in another tab) discards edits that were still inside the 600 ms save window. Signing out *inside* the app flushes first and asks before discarding if a save fails.
+- **Layouts were audited statically, not rendered.** No real browser was available, so the six viewport widths (320/375/768/1024/1280/1536) have not been looked at. Three overflow bugs found by code audit were fixed (music player, toasts, task form). Do a visual pass on a real phone.
+- **After sign-in you land on `/`** rather than the page you were on.
+- **Tap targets** on small icon buttons are about 24 px (meets WCAG 2.5.8 minimum, below the 44 px comfort guideline).

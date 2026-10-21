@@ -15,6 +15,8 @@ import {
   Check,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { todayLocal } from '../../lib/recurrence';
+import { CalendarPlus } from 'lucide-react';
 
 export const NotesView: React.FC = () => {
   const {
@@ -26,11 +28,14 @@ export const NotesView: React.FC = () => {
     deleteNote,
     toggleStarNote,
     showToast,
+    addTask,
+    saveStatus: syncStatus,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileEditorOpen, setIsMobileEditorOpen] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string>('Saved');
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(todayLocal());
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [confirmDeleteNoteId, setConfirmDeleteNoteId] = useState<string | null>(null);
@@ -55,24 +60,20 @@ export const NotesView: React.FC = () => {
 
   const handleTitleChange = (val: string) => {
     if (!selectedNote) return;
-    setSaveStatus('Saving...');
     updateNote({
       ...selectedNote,
       title: val,
       excerpt: selectedNote.content.slice(0, 120),
     });
-    setTimeout(() => setSaveStatus('Saved'), 300);
   };
 
   const handleContentChange = (val: string) => {
     if (!selectedNote) return;
-    setSaveStatus('Saving...');
     updateNote({
       ...selectedNote,
       content: val,
       excerpt: val.replace(/^[#\s]+/, '').slice(0, 120),
     });
-    setTimeout(() => setSaveStatus('Saved'), 300);
   };
 
   const insertFormatting = (prefix: string, suffix: string = '') => {
@@ -285,8 +286,35 @@ export const NotesView: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="flex items-center gap-1 text-[11px] text-[#477653] dark:text-[#91B594] font-medium">
                     <Check className="h-3 w-3" />
-                    <span>{saveStatus}</span>
+                    <span role="status">{syncStatus === 'saving' ? 'Saving…' : syncStatus === 'error' ? 'Not saved' : 'Saved'}</span>
                   </span>
+                  <div className="relative">
+                    <button
+                      onClick={() => setScheduleOpen((o) => !o)}
+                      aria-label="Schedule this note"
+                      aria-expanded={scheduleOpen}
+                      title="Schedule: create a dated task linked to this note"
+                      className="rounded p-1 text-[#8A8E85] hover:text-[#526B55]"
+                    >
+                      <CalendarPlus className="h-4 w-4" />
+                    </button>
+                    {scheduleOpen && (
+                      <div role="dialog" aria-label="Schedule note" className="absolute right-0 z-20 mt-1 w-56 space-y-2 rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] p-3 shadow-lg">
+                        <label className="block text-[11px] font-semibold text-[#6B7067] dark:text-[#A6AB9F]">Due date
+                          <input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)}
+                            className="mt-1 w-full rounded border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-2 py-1 text-xs" />
+                        </label>
+                        <button
+                          disabled={!scheduleDate}
+                          onClick={() => {
+                            addTask({ title: `Review: ${selectedNote.title || 'Untitled'}`.slice(0, 200), list: 'Inbox', priority: 'MEDIUM', status: 'todo', dueDate: scheduleDate, linkedNoteId: selectedNote.id });
+                            setScheduleOpen(false);
+                          }}
+                          className="w-full rounded bg-[#3D5240] dark:bg-[#526B55] px-2 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                        >Create linked task</button>
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={() => toggleStarNote(selectedNote.id)}
                     aria-label="Star document"

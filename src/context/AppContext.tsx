@@ -89,6 +89,7 @@ interface AppContextType {
   selectedTableId: string;
   setSelectedTableId: (id: string) => void;
   addTableRow: (tableId: string, row: Record<string, any>) => void;
+  addTableRows: (tableId: string, rows: Record<string, any>[]) => void;
   updateTableRow: (tableId: string, rowId: string, row: Record<string, any>) => void;
   deleteTableRow: (tableId: string, rowId: string) => void;
   addTableCollection: (table: Omit<TableCollection, 'id' | 'updatedAt'>) => void;
@@ -185,8 +186,26 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const ROUTABLE: ModuleType[] = ['dashboard', 'notes', 'tables', 'expenses', 'fitness', 'goals', 'trackers', 'tasks', 'settings', 'admin'];
+export const moduleFromPath = (pathname: string): ModuleType => {
+  const seg = pathname.replace(/^\/+|\/+$/g, '').split('/')[0] as ModuleType;
+  return ROUTABLE.includes(seg) ? seg : 'dashboard';
+};
+export const pathForModule = (m: ModuleType) => (m === 'dashboard' ? '/' : `/${m}`);
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
+  // Minimal URL router: /notes, /tasks, ... (dashboard = "/"). Back/forward and deep links work; no extra dependency.
+  const [activeModule, setActiveModuleState] = useState<ModuleType>(() => moduleFromPath(window.location.pathname));
+  const setActiveModule = (mod: ModuleType) => {
+    setActiveModuleState(mod);
+    const target = pathForModule(mod);
+    if (window.location.pathname !== target) window.history.pushState({ module: mod }, '', target);
+  };
+  useEffect(() => {
+    const onPop = () => setActiveModuleState(moduleFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   
   // Theme Preference: 'light' | 'dark' | 'system'
   const [themePreference, setThemePrefState] = useState<ThemePreference>(() => {
@@ -246,7 +265,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   
   // User Profile: derived from the authenticated account, never hardcoded.
-  const { user, isAdmin, signOut } = useAuth();
+  const { user, isAdmin, signOut: authSignOut } = useAuth();
   const [displayName, setDisplayName] = useState<string>(
     () => (user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User') as string
   );
@@ -388,6 +407,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       saving.current = false;
       if (dataRef.current !== target && saveStatusRetry.current) flushSoon();  // changed during save
     }
+  };
+  /** Wait for any in-flight save, push remaining edits, report whether the server is fully up to date. */
+  const flushNow = async (): Promise<boolean> => {
+    if (timer.current) clearTimeout(timer.current);
+    for (let i = 0; i < 100 && saving.current; i++) await new Promise((r) => setTimeout(r, 50));
+    await flush();
+    if (!syncedRows.current || !dataRef.current) return true;
+    return planChanges(syncedRows.current, toRows(dataRef.current)).isEmpty;
+  };
+  const signOut = async () => {
+    const clean = await flushNow();
+    if (!clean && !window.confirm('Some recent changes could not be saved. Sign out anyway and lose them?')) return;
+    await authSignOut();
   };
   const saveStatusRetry = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -731,7 +763,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (selectedNoteId === id) {
         setSelectedNoteId(nextNotes.length > 0 ? nextNotes[0].id : null);
       }
-      return { ...prev, notes: nextNotes };
+      // The database nulls linked_note_id on delete; mirror that locally so a later task edit can't send a dangling reference.
+      return { ...prev, notes: nextNotes, tasks: prev.tasks.map((t) => (t.linkedNoteId === id ? { ...t, linkedNoteId: undefined } : t)) };
     });
     showToast('Note deleted', 'info');
   };
@@ -748,6 +781,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Table Handlers
+  /** Batch insert: one state update, one save, one toast (used by CSV import). */
+  const addTableRows = (tableId: string, rows: Record<string, any>[]) => {
+    if (rows.length === 0) return;
+    setData((prev) => {
+      if (!prev) return null;
+      return { ...prev, tables: prev.tables.map((tbl) => tbl.id !== tableId ? tbl : {
+        ...tbl, updatedAt: new Date().toISOString(),
+        rows: [...tbl.rows, ...rows.map((r, i) => ({ ...r, id: newId(), index: tbl.rows.length + i + 1 }))],
+      }) };
+    });
+  };
+
   const addTableRow = (tableId: string, row: Record<string, any>) => {
     const newRowId = newId();
     setData((prev) => {
@@ -1100,6 +1145,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedTableId,
         setSelectedTableId,
         addTableRow,
+        addTableRows,
         updateTableRow,
         deleteTableRow,
         addTableCollection,

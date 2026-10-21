@@ -3,6 +3,7 @@ type Row = Record<string, any>;
 export const db: Record<string, Record<string, Row[]>> = {};   // userId -> table -> rows
 export const fnCalls: { name: string; body: any }[] = [];
 export const fnHandlers: Record<string, (body: any) => unknown> = {};
+export const failWrites = { on: false };
 export const calls: { op: string; table: string; n?: number }[] = [];
 let currentUser: any = null;
 const listeners = new Set<(e: string, s: any) => void>();
@@ -31,7 +32,7 @@ function from(t: string) {
       };
       return b;
     },
-    upsert: async (rows: Row[] | Row) => { const arr = Array.isArray(rows) ? rows : [rows]; calls.push({ op: 'upsert', table: t, n: arr.length });
+    upsert: async (rows: Row[] | Row) => { if (failWrites.on) return { error: { message: 'simulated outage' } }; const arr = Array.isArray(rows) ? rows : [rows]; calls.push({ op: 'upsert', table: t, n: arr.length });
       for (const r of arr) { const k = tbl(t); const i = k.findIndex((x) => x.id === r.id && x.habit_id === r.habit_id && x.checkin_date === r.checkin_date); if (i >= 0) k[i] = { ...k[i], ...r }; else k.push({ ...r, user_id: currentUser.id }); }
       return { error: null }; },
     update: () => ({ eq: async () => ({ error: null }) }),

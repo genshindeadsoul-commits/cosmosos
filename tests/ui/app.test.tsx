@@ -8,9 +8,10 @@ import * as fake from './fakeSupabase';
 vi.mock('../../src/lib/supabase', () => ({ supabase: fake.fakeClient, isSupabaseConfigured: true, requireSupabase: () => fake.fakeClient }));
 import App from '../../src/App';
 
+const REAL_LOCATION = Object.getOwnPropertyDescriptor(window, 'location')!;
 const NAV = ['Dashboard', 'Notes', 'Tables', 'Expenses', 'Fitness', 'Goals & Habits', 'Custom Trackers', 'Tasks & Calendar', 'Settings'];
 
-beforeEach(() => { fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
+beforeEach(() => { Object.defineProperty(window, 'location', REAL_LOCATION); fake.failWrites.on = false; window.history.replaceState({}, '', '/'); fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
 
 describe('auth gate', () => {
   it('shows login (and no private UI) with no session', async () => {
@@ -271,5 +272,171 @@ describe('integrations (UI against mocked server functions)', () => {
     await user.click(await screen.findByRole('button', { name: /spotify/i }));
     expect(await screen.findByText(/Connect in Settings/)).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/Authorized Client|Spotify Editorial/);
+  });
+});
+
+
+const NAVBTN = (label: RegExp) => within(screen.getByRole('navigation', { name: 'Main Navigation' })).getByRole('button', { name: label });
+const NOTE_ID = '55555555-5555-4555-8555-555555555555';
+const seedNote = () => ({ notes: [{ id: NOTE_ID, title: 'Quarterly plan', content: 'c', excerpt: 'c', starred: false, tags: [], created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' }] });
+
+describe('router', () => {
+  it('deep link opens the right module; navigation updates the URL; back button restores', async () => {
+    window.history.replaceState({}, '', '/tasks');
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(screen.getAllByText('Tasks & Calendar').length).toBeGreaterThan(1));   // sidebar item + top bar title
+    expect(window.location.pathname).toBe('/tasks');
+    await user.click(NAVBTN(/Settings/));
+    expect(window.location.pathname).toBe('/settings');
+    React.act(() => { window.history.back(); window.dispatchEvent(new PopStateEvent('popstate')); });
+    await waitFor(() => expect(window.location.pathname).toBe('/tasks'));
+    await user.click(NAVBTN(/Dashboard/));
+    expect(window.location.pathname).toBe('/');
+  });
+  it('unknown paths fall back to the dashboard', async () => {
+    window.history.replaceState({}, '', '/definitely-not-a-page');
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    render(<App />); await screen.findAllByText('Dashboard');
+    expect(document.body.textContent).not.toMatch(/Page not found|undefined/);
+  });
+  it('a non-admin deep-linking to /admin sees no admin content', async () => {
+    window.history.replaceState({}, '', '/admin');
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    render(<App />); await screen.findAllByText('Dashboard');
+    expect(screen.queryByText('Admin overview')).toBeNull();
+  });
+});
+
+describe('notes <-> tasks', () => {
+  it('Schedule creates a linked, dated task; the task links back; deleting the note cannot poison later edits', async () => {
+    fake.db['u1'] = seedNote();
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(NAVBTN(/Notes/));
+    await user.click(await screen.findByRole('button', { name: 'Schedule this note' }));
+    const date = screen.getByLabelText('Due date') as HTMLInputElement;
+    await user.clear(date); await user.type(date, '2026-11-05');
+    await user.click(screen.getByRole('button', { name: 'Create linked task' }));
+    await waitFor(() => expect(fake.db['u1'].tasks?.[0]).toMatchObject({ title: 'Review: Quarterly plan', due_date: '2026-11-05', linked_note_id: NOTE_ID }), { timeout: 4000 });
+    await user.click(NAVBTN(/Tasks & Calendar/));
+    await user.click(await screen.findByRole('button', { name: /Open linked note Quarterly plan/ }));
+    expect(window.location.pathname).toBe('/notes');
+    // Delete the note through the UI, then complete the task. The write must not reference the deleted note.
+    await user.click(NAVBTN(/Notes/));
+    await user.click(await screen.findByRole('button', { name: 'Delete note' }));
+    const confirmBtn = within(screen.getByText('Delete?').parentElement!).getAllByRole('button')[0];
+    await user.click(confirmBtn);
+    await waitFor(() => expect(fake.db['u1'].notes).toHaveLength(0), { timeout: 4000 });
+    fake.db['u1'].tasks[0].linked_note_id = null;                   // what the real FK ON DELETE SET NULL does server-side
+    fake.calls.length = 0;
+    await user.click(NAVBTN(/Tasks & Calendar/));
+    await user.click(await screen.findByRole('button', { name: 'Toggle task Review: Quarterly plan' }));
+    await waitFor(() => expect(fake.calls.some((c) => c.op === 'upsert' && c.table === 'tasks')).toBe(true), { timeout: 4000 });
+    expect(fake.db['u1'].tasks[0].linked_note_id).toBeNull();
+    expect(fake.db['u1'].tasks[0].status).toBe('completed');
+  });
+  it('Notes toolbar reports the REAL save state: "Not saved" when the server rejects the write', async () => {
+    fake.db['u1'] = seedNote();
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(NAVBTN(/Notes/));
+    fake.failWrites.on = true;
+    const title = await screen.findByDisplayValue('Quarterly plan');
+    await user.type(title, ' v2');
+    await waitFor(() => expect(within(screen.getByRole('main')).getAllByRole('status').some((e) => e.textContent === 'Not saved')).toBe(true), { timeout: 4000 });
+  });
+});
+
+describe('CSV import', () => {
+  const TBL = '66666666-6666-4666-8666-666666666666';
+  const seedTable = () => ({ data_tables: [{ id: TBL, name: 'Ledger', description: '', columns: [{ id: 'c1', name: 'Name', type: 'text' }, { id: 'c2', name: 'Amount', type: 'number' }], created_at: '', updated_at: '' }],
+    table_rows: [{ id: '77777777-7777-4777-8777-777777777777', table_id: TBL, position: 0, data: { c1: 'Existing', c2: '5', index: 1 } }] });
+
+  it('maps by header name, handles quoted commas/newlines, reports bad rows, skips duplicates, inserts once', async () => {
+    fake.db['u1'] = seedTable();
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(NAVBTN(/Tables/));
+    const csv = 'amount,Name,Ignored\r\n"1,200.50","Smith, John",x\r\n7,"multi\nline",y\r\nabc,Bad Row,z\r\n5,Existing,q\r\n';
+    const input = (await screen.findByText('Import CSV')).parentElement!.querySelector('input[type=file]') as HTMLInputElement;
+    await user.upload(input, new File([csv], 'rows.csv', { type: 'text/csv' }));
+    const dlg = await screen.findByRole('dialog', { name: 'Import CSV' });
+    await within(dlg).findByText(/will be added/);
+    expect(dlg.textContent).toMatch(/2\s*rows will be added/);
+    expect(dlg.textContent).toMatch(/1\s*duplicate/);
+    expect(dlg.textContent).toMatch(/1\s*invalid row/);
+    expect(within(dlg).getByLabelText('Invalid rows').textContent).toMatch(/Line 4: .abc. isn.t a number/);
+    expect((within(dlg).getByLabelText('Map Ignored') as HTMLSelectElement).value).toBe('');
+    expect(fake.db['u1'].table_rows).toHaveLength(1);                 // nothing written before confirming
+    await user.click(within(dlg).getByRole('button', { name: 'Import 2 rows' }));
+    await waitFor(() => expect(fake.db['u1'].table_rows).toHaveLength(3), { timeout: 4000 });
+    const data = fake.db['u1'].table_rows.map((r: any) => r.data);
+    expect(data.some((d: any) => d.c1 === 'Smith, John' && d.c2 === '1200.5')).toBe(true);
+    expect(data.some((d: any) => d.c1 === 'multi\nline' && d.c2 === '7')).toBe(true);
+    expect(fake.calls.filter((c) => c.op === 'upsert' && c.table === 'table_rows')).toHaveLength(1);   // one batched write
+  });
+  it('rejects an unreadable file with a clear message and writes nothing', async () => {
+    fake.db['u1'] = seedTable();
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(NAVBTN(/Tables/));
+    const input = (await screen.findByText('Import CSV')).parentElement!.querySelector('input[type=file]') as HTMLInputElement;
+    await user.upload(input, new File(['a,b\n"oops,1'], 'bad.csv', { type: 'text/csv' }));
+    expect(await screen.findByText(/unclosed quote/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Import' }).hasAttribute('disabled')).toBe(true);
+    expect(fake.db['u1'].table_rows).toHaveLength(1);
+  });
+});
+
+describe('sign-out and account switching', () => {
+  const addTaskViaQuickCapture = async (user: ReturnType<typeof userEvent.setup>, title: string) => {
+    await user.click(screen.getAllByRole('button', { name: /Add Task/i })[0]);
+    const input = await screen.findByPlaceholderText('e.g. Finish quarterly financial summary');
+    await user.type(input, title); await user.keyboard('{Enter}');
+  };
+  const openProfileSignOut = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: /profile/i }));
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+  };
+
+  it('signing out immediately after an edit still saves it first (no silent loss)', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await addTaskViaQuickCapture(user, 'Last-second task');
+    await openProfileSignOut(user);                                   // well inside the 600 ms debounce
+    expect(await screen.findByText('Continue with Google')).toBeTruthy();
+    expect(fake.db['u1'].tasks.map((t: any) => t.title)).toContain('Last-second task');
+  });
+  it('if the save fails, sign-out asks first; declining keeps you signed in with your data', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    fake.failWrites.on = true;
+    await addTaskViaQuickCapture(user, 'Unsaved task');
+    await openProfileSignOut(user);
+    await waitFor(() => expect(confirm).toHaveBeenCalled(), { timeout: 4000 });
+    expect(screen.queryByText('Continue with Google')).toBeNull();
+    confirm.mockRestore();
+  });
+  it('five account switches: nobody ever sees or receives another account\'s data', async () => {
+    const accounts = ['A', 'B', 'C', 'A', 'B'] as const;
+    for (const id of ['A', 'B', 'C']) fake.db[id] = { tasks: [{ id: `${id.charCodeAt(0).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`, title: `${id}-private-task`, list_name: 'Inbox', status: 'todo', priority: 'LOW', due_date: null }] };
+    fake.setUser({ id: 'A', email: 'a@x.dev' });
+    render(<App />); await screen.findAllByText('Dashboard');
+    for (const [i, id] of accounts.entries()) {
+      if (i > 0) { fake.setUser({ id, email: `${id.toLowerCase()}@x.dev` }); React.act(() => fake.emit('SIGNED_IN')); }
+      await waitFor(() => expect(document.body.textContent).toContain(`${id}-private-task`), { timeout: 4000 });
+      for (const other of ['A', 'B', 'C'].filter((x) => x !== id)) expect(document.body.textContent).not.toContain(`${other}-private-task`);
+    }
+    // nothing leaked into storage either
+    for (const id of ['A', 'B', 'C']) expect(fake.db[id].tasks.every((t: any) => t.title === `${id}-private-task`)).toBe(true);
   });
 });

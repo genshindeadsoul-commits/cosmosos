@@ -10,6 +10,8 @@ import {
   Table as TableIcon,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { toCsv } from '../../lib/csv';
+import { CsvImportDialog } from './CsvImportDialog';
 
 export const TablesView: React.FC = () => {
   const {
@@ -19,9 +21,11 @@ export const TablesView: React.FC = () => {
     addTableRow,
     deleteTableRow,
     addTableCollection,
+    addTableRows,
     showToast,
   } = useApp();
 
+  const [csvFile, setCsvFile] = useState<File | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'kanban'>('grid');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [isAddRecordOpen, setIsAddRecordOpen] = useState(false);
@@ -42,18 +46,7 @@ export const TablesView: React.FC = () => {
 
   const handleExportCSV = () => {
     if (!activeTable) return;
-    const headers = activeTable.columns.map((c) => c.name).join(',');
-    const rows = activeTable.rows
-      .map((r) =>
-        activeTable.columns
-          .map((c) => {
-            const val = r[c.id] ?? '';
-            return `"${String(val).replace(/"/g, '""')}"`;
-          })
-          .join(',')
-      )
-      .join('\n');
-    const csvContent = `${headers}\n${rows}`;
+    const csvContent = toCsv([activeTable.columns.map((c) => c.name), ...activeTable.rows.map((r) => activeTable.columns.map((c) => r[c.id] ?? ''))]);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -64,29 +57,9 @@ export const TablesView: React.FC = () => {
     showToast('CSV export downloaded', 'success');
   };
 
-  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePickCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !activeTable) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split('\n').filter((l) => l.trim());
-      if (lines.length <= 1) {
-        showToast('CSV file is empty or missing data rows', 'warning');
-        return;
-      }
-      const dataRows = lines.slice(1);
-      dataRows.forEach((rowLine) => {
-        const parts = rowLine.split(',').map((p) => p.replace(/^"|"$/g, '').trim());
-        const rowObj: Record<string, any> = {};
-        activeTable.columns.forEach((col, idx) => {
-          rowObj[col.id] = parts[idx] ?? '';
-        });
-        addTableRow(activeTable.id, rowObj);
-      });
-      showToast(`Imported ${dataRows.length} rows from CSV`, 'success');
-    };
-    reader.readAsText(file);
+    if (file && activeTable) setCsvFile(file);
     e.target.value = '';
   };
 
@@ -120,6 +93,7 @@ export const TablesView: React.FC = () => {
   };
 
   return (
+    <>
     <div className="space-y-4 max-w-7xl mx-auto pb-12">
       {/* Table Selection & Description Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#DFE1D9] dark:border-[#383D35] pb-3">
@@ -170,7 +144,7 @@ export const TablesView: React.FC = () => {
           <label className="flex items-center gap-1.5 rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] px-3 py-1.5 text-xs font-semibold text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] transition-colors cursor-pointer">
             <Upload className="h-3.5 w-3.5" />
             <span>Import CSV</span>
-            <input type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
+            <input type="file" accept=".csv" onChange={handlePickCSV} className="hidden" />
           </label>
 
           <div className="flex rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-0.5">
@@ -498,5 +472,18 @@ export const TablesView: React.FC = () => {
         </div>
       )}
     </div>
+    {csvFile && activeTable && (
+      <CsvImportDialog
+        table={activeTable}
+        file={csvFile}
+        onCancel={() => setCsvFile(null)}
+        onImport={(rows, skipped) => {
+          addTableRows(activeTable.id, rows);
+          showToast(`Imported ${rows.length} row${rows.length === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}`, 'success');
+          setCsvFile(null);
+        }}
+      />
+    )}
+    </>
   );
 };

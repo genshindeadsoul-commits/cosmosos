@@ -23,6 +23,9 @@ export const TasksSchedulingView: React.FC = () => {
     deleteEvent,
     focusRecord,
     setFocusRecord,
+    notes,
+    setSelectedNoteId,
+    setActiveModule,
   } = useApp();
 
   // Scroll the record chosen in Search/Calendar into view, highlight it briefly, then clear.
@@ -256,6 +259,15 @@ export const TasksSchedulingView: React.FC = () => {
                       }`}
                     >
                       {t.title}
+                      {t.linkedNoteId && notes.some((n) => n.id === t.linkedNoteId) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setSelectedNoteId(t.linkedNoteId!); setActiveModule('notes'); }}
+                          className="ml-2 rounded bg-[#ECEDE7] dark:bg-[#292D27] px-1.5 py-0.5 text-[10px] font-semibold text-[#526B55] dark:text-[#A8BDA1] hover:underline"
+                          aria-label={`Open linked note ${notes.find((n) => n.id === t.linkedNoteId)?.title}`}
+                        >
+                          Note: {notes.find((n) => n.id === t.linkedNoteId)?.title}
+                        </button>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-[#8A8E85]">
                       <span>{t.list}</span>
@@ -480,7 +492,7 @@ export const TasksSchedulingView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-[#6B7067] dark:text-[#A6AB9F] mb-1">
                     Date

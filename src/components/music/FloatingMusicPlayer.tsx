@@ -54,7 +54,7 @@ export const FloatingMusicPlayer: React.FC = () => {
     <div
       role="region"
       aria-label="Cosmos Mini-Player"
-      className="fixed bottom-4 right-4 z-50 w-80 sm:w-88 rounded-2xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF]/95 dark:bg-[#20231F]/95 shadow-2xl backdrop-blur-md transition-all duration-200"
+      className="fixed bottom-4 right-4 z-50 w-[calc(100vw-2rem)] max-w-80 sm:w-88 sm:max-w-none rounded-2xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF]/95 dark:bg-[#20231F]/95 shadow-2xl backdrop-blur-md transition-all duration-200"
     >
       {/* Header bar */}
       <div className="flex items-center justify-between border-b border-[#DFE1D9] dark:border-[#383D35] px-3.5 py-2.5">
