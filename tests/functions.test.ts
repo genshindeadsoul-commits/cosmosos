@@ -67,7 +67,7 @@ test('oauth start: 501 when server secrets are missing, 400 for unknown provider
   const u = new URL(url);
   assert.equal(u.searchParams.get('scope'), 'https://www.googleapis.com/auth/gmail.readonly email');
   assert.equal(u.searchParams.get('access_type'), 'offline');
-  assert.equal(u.searchParams.get('redirect_uri'), 'https://x.supabase.co/functions/v1/oauth-callback');
+  assert.equal(u.searchParams.get('redirect_uri'), 'https://x.supabase.co/functions/v1/api/oauth-callback');
   assert.ok(ok.mem.states.has(u.searchParams.get('state')!));
   assert.ok(!url.includes('gsec'), 'client secret must never be in the browser URL');
 });

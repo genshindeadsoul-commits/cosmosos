@@ -4,7 +4,7 @@ import { GMAIL_SCOPE, isGmailCapability, isProvider, PROVIDERS, type Provider } 
 import { type Ctx, HttpError } from './ports.ts';
 import { getAccessToken, providerFetch, requireEnv, tokenRequestInit } from './tokens.ts';
 
-const callbackUrl = (ctx: Ctx) => `${ctx.env.SUPABASE_URL}/functions/v1/oauth-callback`;
+const callbackUrl = (ctx: Ctx) => `${ctx.env.SUPABASE_URL}/functions/v1/api/oauth-callback`;
 
 // ---------------- OAuth ----------------
 export async function startOAuth(userId: string, body: any, ctx: Ctx): Promise<{ url: string }> {
