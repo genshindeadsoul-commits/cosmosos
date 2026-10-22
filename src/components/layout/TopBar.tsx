@@ -18,6 +18,8 @@ const MODULE_TITLES: Record<ModuleType, string> = {
   trackers: 'Custom Trackers',
   tasks: 'Tasks & Calendar',
   settings: 'Settings',
+  mail: 'Mail',
+  whatsapp: 'WhatsApp',
   admin: 'Admin',
 };
 

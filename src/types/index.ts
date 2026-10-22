@@ -8,6 +8,8 @@ export type ModuleType =
   | 'trackers'
   | 'tasks'
   | 'settings'
+  | 'mail'
+  | 'whatsapp'
   | 'admin';
 
 export type TaskListType = 'Inbox' | 'Work' | 'Study' | 'Health' | 'Personal' | 'Holiday trip';
@@ -205,7 +207,7 @@ export interface MusicTrack {
 export interface MusicPlayerState {
   isOpen: boolean;
   isMinimized: boolean;
-  provider: 'ambient' | 'spotify' | 'apple_music';
+  provider: 'ambient' | 'spotify';
   isPlaying: boolean;
   currentTrack: string;
   artist: string;

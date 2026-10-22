@@ -31,13 +31,13 @@ import { SheetsImportPanel, HealthTokenPanel } from './IntegrationPanels';
 export const SettingsView: React.FC = () => {
   const {
     exportBackup,
+    openMusicWidget,
     importBackup,
     resetAllData,
     themePreference,
     setThemePreference,
     effectiveTheme,
-    setWhatsAppOpen,
-    setGmailOpen,
+    setActiveModule,
     toggleMusicPlayer,
     showToast,
   } = useApp();
@@ -336,7 +336,7 @@ export const SettingsView: React.FC = () => {
                       {/* Provider-specific Launchers */}
                       {item.id === 'gmail' && isConnected && (
                         <button
-                          onClick={() => setGmailOpen(true)}
+                          onClick={() => setActiveModule('mail')}
                           className="flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
                         >
                           <Mail className="h-3 w-3" />
@@ -346,7 +346,7 @@ export const SettingsView: React.FC = () => {
 
                       {item.id === 'whatsapp' && (
                         <button
-                          onClick={() => setWhatsAppOpen(true)}
+                          onClick={() => setActiveModule('whatsapp')}
                           className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
                         >
                           <MessageCircle className="h-3 w-3" />
@@ -354,7 +354,17 @@ export const SettingsView: React.FC = () => {
                         </button>
                       )}
 
-                      {(item.id === 'spotify' || item.id === 'apple_music') && (
+                      {item.id === 'apple_music' && (
+                        <button
+                          onClick={openMusicWidget}
+                          className="flex items-center gap-1.5 rounded-lg bg-[#252821] dark:bg-[#383D35] px-3 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
+                        >
+                          <Disc className="h-3 w-3" />
+                          <span>Open Apple Music player</span>
+                        </button>
+                      )}
+
+                      {item.id === 'spotify' && (
                         <button
                           onClick={toggleMusicPlayer}
                           className="flex items-center gap-1.5 rounded-lg bg-[#252821] dark:bg-[#383D35] px-3 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
@@ -407,7 +417,7 @@ export const SettingsView: React.FC = () => {
                       </button>
                     ) : (
                       <span className="font-semibold text-[#6B7067] dark:text-[#A6AB9F]">
-                        {item.id === 'gdrive' ? 'Not available in this build' : item.id === 'health' ? 'Connects when a companion app sends data' : item.id === 'apple_music' ? 'Authorize from the mini-player' : 'Nothing to connect'}
+                        {item.id === 'gdrive' ? 'Not available in this build' : item.id === 'health' ? 'Connects when a companion app sends data' : item.id === 'apple_music' ? 'No connection needed' : 'Nothing to connect'}
                       </span>
                     )}
                   </div>

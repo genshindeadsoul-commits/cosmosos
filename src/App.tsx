@@ -9,8 +9,10 @@ import { GlobalSearchModal } from './components/common/GlobalSearchModal';
 import { QuickCaptureModal } from './components/common/QuickCaptureModal';
 import { FloatingMusicPlayer } from './components/music/FloatingMusicPlayer';
 import { ProfileModal } from './components/profile/ProfileModal';
-import { WhatsAppModal } from './components/whatsapp/WhatsAppModal';
-import { GmailModal } from './components/gmail/GmailModal';
+import { MailView } from './features/mail/MailView';
+import { WhatsAppView } from './features/whatsapp/WhatsAppView';
+import { AppleMusicWidget } from './components/music/AppleMusicWidget';
+import { PrefsProvider } from './context/PrefsContext';
 
 import { DashboardView } from './features/dashboard/DashboardView';
 import { NotesView } from './features/notes/NotesView';
@@ -56,6 +58,8 @@ const MainContent: React.FC = () => {
       case 'goals': return <GoalsHabitsView />;
       case 'trackers': return <CustomTrackersView />;
       case 'tasks': return <TasksSchedulingView />;
+      case 'mail': return <MailView />;
+      case 'whatsapp': return <WhatsAppView />;
       case 'settings': return <SettingsView />;
       case 'admin': return isAdmin ? <AdminView /> : <DashboardView />;
       default: return <DashboardView />;
@@ -74,8 +78,7 @@ const MainContent: React.FC = () => {
       <QuickCaptureModal />
       <FloatingMusicPlayer />
       <ProfileModal />
-      <WhatsAppModal />
-      <GmailModal />
+      <AppleMusicWidget />
 
       <div className="fixed bottom-5 left-4 right-4 sm:right-auto sm:left-5 z-50 flex flex-col gap-2 pointer-events-none sm:max-w-sm">
         {toasts.map((toast) => (
@@ -101,9 +104,11 @@ const Authenticated: React.FC = () => {
   const { user } = useAuth();
   return (
     <AppProvider key={user!.id}>
-      <IntegrationsProvider>
-        <MainContent />
-      </IntegrationsProvider>
+      <PrefsProvider>
+        <IntegrationsProvider>
+          <MainContent />
+        </IntegrationsProvider>
+      </PrefsProvider>
     </AppProvider>
   );
 };

@@ -50,65 +50,68 @@ Admins see aggregate counts only (`admin_overview()`); no RLS policy gives them 
 - Local scratch Postgres: `./supabase/tests/run.sh` (uses a stub of Supabase's `auth` schema).
 - On your real project: sign in as two different Google accounts, create a note in each, then in the browser console for account B try `supabase.from('notes').select()`; it must return only B's rows. Re-run the same migration-based checks with real JWTs before trusting production.
 
-## 5. Integrations (Edge Functions)
+## 5. Integrations (one Edge Function: `api`)
 
-Everything below is **implemented and tested against mocked provider responses**, but has **never been run against the real Google, Spotify, or Apple services**. Treat step 5g as required, not optional.
+Implemented and tested against **mocked** provider responses. None of it has run against the real Google or Spotify services; treat 5f as required.
 
-### 5a. Generate an encryption key and set secrets
+| Feature | How it works | Needs |
+|---|---|---|
+| **Apple Music** | Floating widget around Apple's official embedded player (`embed.music.apple.com`). Paste a playlist or album link. | Nothing server-side. No MusicKit, no developer membership. Apple handles sign-in/subscription inside its player. |
+| **Gmail** | Official Gmail API via the `api` function. Folders: Inbox, All Mail, Sent, Drafts, Starred, Spam, Trash. | Google OAuth client + secrets below |
+| **WhatsApp** | Panel that opens the official `https://web.whatsapp.com/` in a new tab (WhatsApp blocks framing). | Nothing |
+| Calendar import, Sheets import, Spotify remote control, Health ingest | Same `api` function | Same Google secrets (+ Spotify app for Spotify) |
+
+### 5a. Secrets (`supabase secrets set`, or Dashboard → Edge Functions → Secrets)
 ```bash
-openssl rand -base64 32            # -> TOKEN_ENCRYPTION_KEY
+openssl rand -base64 32            # -> TOKEN_ENCRYPTION_KEY (keep it secret; losing it just forces users to reconnect)
 supabase secrets set \
   TOKEN_ENCRYPTION_KEY=<value above> \
-  APP_URL=https://your-app.example \
-  ALLOWED_ORIGINS=https://your-app.example,http://localhost:3000 \
-  GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... \
-  SPOTIFY_CLIENT_ID=... SPOTIFY_CLIENT_SECRET=... \
-  APPLE_TEAM_ID=... APPLE_KEY_ID=... APPLE_PRIVATE_KEY="$(cat AuthKey_XXXX.p8)"
+  APP_URL=https://oscosmos.vercel.app \
+  ALLOWED_ORIGINS=https://oscosmos.vercel.app,http://localhost:3000 \
+  GOOGLE_CLIENT_ID=<your OAuth client id> GOOGLE_CLIENT_SECRET=<its secret> \
+  SPOTIFY_CLIENT_ID=... SPOTIFY_CLIENT_SECRET=...      # only if you want Spotify
 ```
-`SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are injected by Supabase automatically. Losing `TOKEN_ENCRYPTION_KEY` makes stored refresh tokens unreadable (users just reconnect); rotating it does the same.
+`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` are injected automatically. The Client **Secret** and encryption key must never go in the frontend, Vercel/Cloudflare variables, or this repo.
 
-### 5b. Run migrations 0002 and 0003, then deploy
+### 5b. Deploy the function
 ```bash
-supabase db push
-supabase functions deploy oauth-start oauth-callback oauth-disconnect gmail calendar-import sheets-preview spotify-token apple-music-token health-ingest
+supabase db push                      # migrations 0001-0004
+supabase functions deploy api         # config.toml sets verify_jwt = false; the router authenticates every route itself
 ```
-`supabase/config.toml` turns JWT verification **off** only for `oauth-callback` (browser redirect, authenticated by one-time `state`) and `health-ingest` (authenticated by a per-user ingest token). All other functions verify the caller's Supabase JWT.
+No CLI? Supabase Dashboard → Project Settings → Integrations → GitHub can deploy `supabase/functions` on push (set the working directory to the repo root). Not verified here.
 
-### 5c. Google (Gmail, Calendar, Sheets)
-1. In the same Google Cloud project: **APIs & Services → Library**: enable *Gmail API*, *Google Calendar API*, *Google Sheets API*.
-2. **OAuth consent screen**: add scopes `gmail.readonly`, `calendar.readonly`, `spreadsheets.readonly`, `email`. `gmail.readonly` is a *restricted* scope: unverified apps are limited to 100 test users and show a warning screen; public launch requires Google's verification and a security assessment.
-3. **Credentials → your Web client → Authorized redirect URIs**: add `https://<PROJECT_REF>.supabase.co/functions/v1/oauth-callback` (this is *in addition to* the `/auth/v1/callback` URI used for sign-in).
-4. While in "Testing", refresh tokens expire after 7 days, so users will see "Reconnect" weekly until the app is published.
+### 5c. Google Cloud (same project as sign-in)
+1. **APIs & Services → Library**: enable *Gmail API* (and *Calendar API*, *Sheets API* if wanted).
+2. **OAuth consent screen → Data access / Scopes**: add `gmail.readonly`, `gmail.modify`, `gmail.send`, `email` (+ `calendar.readonly`, `spreadsheets.readonly` if wanted). Add your Google account(s) as **Test users**.
+3. **Credentials → your Web client → Authorized redirect URIs**: add **`https://<PROJECT_REF>.supabase.co/functions/v1/api/oauth-callback`** (keep the existing `/auth/v1/callback` one: that is Supabase sign-in, and it is untouched).
 
-### 5d. Spotify
-developer.spotify.com → create an app → Redirect URI `https://<PROJECT_REF>.supabase.co/functions/v1/oauth-callback`. Playback control needs **Spotify Premium** and an already-open Spotify device; Cosmos OS does not stream audio. In development mode only users you add under *User Management* can authorize.
+### 5d. Gmail permissions are incremental
+- **Connect Gmail** requests **read-only** only.
+- **Enable mark read / star** later adds `gmail.modify`; **Enable send email** adds `gmail.send`. Existing grants are kept.
+- The server refuses modify/send calls unless that scope is recorded for your account, and `modify` can only change the UNREAD and STARRED labels (never delete/trash). Compose is plain-text only; drafts are listed and readable but not edited.
+- Disconnect revokes the token at Google (best effort), deletes the stored credential, and clears the status.
 
-### 5e. Apple Music
-Apple Developer account → Keys → enable *Media Services (MusicKit)* → download the `.p8`. The browser loads MusicKit JS from Apple's CDN and each user authorizes per browser; an Apple Music subscription is required.
+### 5e. Google verification requirements (important)
+| Scope | Class | Consequence |
+|---|---|---|
+| `gmail.readonly`, `gmail.modify` | **Restricted** | Unverified apps: max 100 test users, "unverified app" warning, and in Testing mode refresh tokens expire after **7 days** (users must reconnect weekly). Public launch needs Google verification **plus an annual third-party security assessment (CASA)**. |
+| `gmail.send` | Sensitive | Needs Google verification for public use (no CASA by itself). |
+Personal use with yourself as a test user needs none of this.
 
-### 5f. Health (Android companion)
-There is no browser API for Health Connect. In Settings → Health Connect, generate an ingest token and have a companion app `POST` workouts to `/functions/v1/health-ingest` (payload shown in the UI). **No companion app is included**; the endpoint, auth, validation, and idempotency are.
-
-### 5g. Live verification checklist (do this before trusting it)
-- [ ] Gmail: connect with a test account → status shows your address → search `from:you` → open a message → *Create task* → task contains a link, not the body.
-- [ ] Gmail with an **archived** message: it appears in the default list (All Mail), spam/trash do not.
-- [ ] Revoke access at myaccount.google.com/permissions → next Gmail action shows *Reconnect*.
-- [ ] Calendar: import twice → no duplicates; edit an event in Google → re-import updates it.
-- [ ] Sheets: paste a sheet you own → preview → create table.
-- [ ] Spotify: with Spotify open and playing, play/pause/next from the mini-player; with Spotify closed → clear "No active device" message.
-- [ ] Apple: Authorize → Play starts from recent tracks.
-- [ ] `select * from integration_secrets` as a normal user returns a permission error; as service role, values start with `v1.` (ciphertext).
-- [ ] Two different users: each sees only their own connections.
-- [ ] Health: `curl` the ingest endpoint with a bad token → 401; with a good token twice → second call reports duplicates.
+### 5f. Live verification checklist
+- [ ] Connect Gmail → status shows your address; Inbox loads real mail; each folder (All Mail, Sent, Drafts, Starred, Spam, Trash) matches what Gmail shows.
+- [ ] An archived message appears in All Mail but not Inbox; Spam/Trash show only with those folders.
+- [ ] Load more; search inside a folder; open a message with an attachment and download it (file opens, name is sane).
+- [ ] Before enabling permissions: Star/Reply show the "enable" prompt. After *Enable mark read / star*: starring and read/unread change in Gmail itself. After *Enable send email*: send a test reply to yourself; it threads correctly in Gmail.
+- [ ] Revoke at myaccount.google.com/permissions → next action shows *Reconnect*. Disconnect → `select * from integration_secrets` (service role) has no row for you.
+- [ ] Sign-in with Google still works after all of the above (Supabase sign-in is separate).
+- [ ] Two accounts: each sees only their own mail and connection state.
+- [ ] Apple Music: paste a playlist link → songs play (subscription/browser permitting); drag, minimize, hide, refresh → layout restored.
+- [ ] WhatsApp: *Open WhatsApp Web* opens a new tab; scanning the QR links your phone.
+- [ ] Calendar/Sheets/Spotify/Health: see the earlier notes if you enabled them.
 
 ### Not implemented
-| Feature | Why |
-|---|---|
-| Google Drive linking | Needs the Google Picker (API key + client script) to stay within `drive.file` |
-| Export to Google Sheets, live Sheets sync | Import-only by design |
-| Two-way Calendar sync | One-way import only; deletions in Google are not mirrored |
-| Health companion Android app | Out of scope; ingest API provided |
-| Gmail attachments download, send, or label edits | Read-only scope |
+Drive linking (needs Google Picker), Sheets export, two-way Calendar sync, Gmail draft editing / trash / delete / labels beyond star and read, HTML mail rendering (plain text only, by design), WhatsApp message access (not possible without scraping), an Android health companion app.
 
 ## Known limits (by design or untested)
 - **Switching accounts from outside the app** (e.g. signing in as someone else in another tab) discards edits that were still inside the 600 ms save window. Signing out *inside* the app flushes first and asks before discarding if a save fails.

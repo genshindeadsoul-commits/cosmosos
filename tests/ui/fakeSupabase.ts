@@ -50,7 +50,8 @@ export const fakeClient = {
     }
     return { data: { total_users: 2, new_users_7d: 1, integrations_by_status: {}, integrations_with_errors: 0 }, error: null };
   },
-  functions: { invoke: async (name: string, opts: any) => {
+  functions: { invoke: async (fullName: string, opts: any) => {
+    const name = fullName.replace(/^api\//, '');   // client calls the single routed function: api/<route>
     fnCalls.push({ name, body: opts?.body });
     const h = fnHandlers[name];
     if (!h) return { data: null, error: { message: 'Failed to send a request to the Edge Function' } };

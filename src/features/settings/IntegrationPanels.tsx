@@ -59,7 +59,7 @@ export const HealthTokenPanel: React.FC = () => {
   const { showToast } = useApp();
   const [label, setLabel] = useState('My phone');
   const [fresh, setFresh] = useState<string | null>(null);
-  const endpoint = `${import.meta.env.VITE_SUPABASE_URL ?? '<your-project>.supabase.co'}/functions/v1/health-ingest`;
+  const endpoint = `${import.meta.env.VITE_SUPABASE_URL ?? '<your-project>.supabase.co'}/functions/v1/api/health-ingest`;
   const active = healthTokens.filter((t) => !t.revoked_at);
 
   return (

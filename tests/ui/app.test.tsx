@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, cleanup, within } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, within, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as fake from './fakeSupabase';
 
@@ -174,7 +174,7 @@ describe('integrations (UI against mocked server functions)', () => {
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
     await gotoSettings(user);
-    await waitFor(() => expect(screen.getAllByText('Connected')).toHaveLength(1));
+    await waitFor(() => expect(within(screen.getByRole('main')).getAllByText('Connected')).toHaveLength(1));
     expect(document.body.textContent).toMatch(/me@gmail\.com/);
     expect(document.body.textContent).not.toMatch(/Disconnected/);
   });
@@ -223,41 +223,121 @@ describe('integrations (UI against mocked server functions)', () => {
     expect(replace).toHaveBeenCalled();
   });
 
-  it('Gmail: connected user searches all mail, reads a message as plain text, creates a task (persisted)', async () => {
-    fake.db['u1'] = { integration_connections: [conn('gmail')] };
+  const goMail = async (user: ReturnType<typeof userEvent.setup>) => {
+    await waitFor(() => expect(screen.getAllByText('Connected').length).toBeGreaterThan(0));
+    await user.click(screen.getByRole('button', { name: /^Gmail/ }));
+  };
+  const SC = { read: 'https://www.googleapis.com/auth/gmail.readonly', modify: 'https://www.googleapis.com/auth/gmail.modify', send: 'https://www.googleapis.com/auth/gmail.send' };
+  const msg = (id: string, over: any = {}) => ({ id, threadId: 't' + id, from: 'Bob <bob@x.com>', subject: `Subject ${id}`, date: 'Mon, 19 Oct 2026 10:00', snippet: 'snip', unread: true, starred: false, internalDate: 1790000000000, ...over });
+  const full = (id: string) => ({ id, threadId: 't' + id, from: 'Bob <bob@x.com>', to: 'me@x.com', cc: '', replyTo: '', subject: `Subject ${id}`, date: 'Mon', messageId: '<m1@x.com>', references: '', unread: true, starred: false, bodyText: 'Please pay <script>alert(1)</script> soon', attachments: [{ filename: '../../evil.pdf', mimeType: 'application/pdf', size: 3, attachmentId: 'ANGjdJ_abcdefghij' }], webLink: `https://mail.google.com/mail/u/0/#all/${id}` });
+
+  it('Mail: folders send real Gmail folder ids; Inbox first; search is per-folder; pagination appends without duplicates', async () => {
+    fake.db['u1'] = { integration_connections: [conn('gmail', { granted_scopes: [SC.read] })] };
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     fake.fnHandlers['gmail'] = (b) => b.action === 'list'
-      ? { messages: [{ id: 'aaaa1111bbbb2222', threadId: 't', from: 'Bob <bob@x.com>', subject: b.q ? `Match for ${b.q}` : 'Invoice 42', date: 'Mon, 19 Oct 2026 10:00', snippet: 'please pay', unread: true }], nextPageToken: null }
-      : { id: b.id, from: 'Bob <bob@x.com>', subject: 'Invoice 42', date: 'Mon', bodyText: 'Please pay <script>alert(1)</script> soon', attachments: [], webLink: 'https://mail.google.com/mail/u/0/#all/aaaa1111bbbb2222' };
+      ? (b.pageToken === 'P2' ? { messages: [msg('aaaa0002'), msg('aaaa0003')], nextPageToken: null } : { messages: [msg('aaaa0001'), msg('aaaa0002')], nextPageToken: 'P2' }) : full(b.id);
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    await waitFor(() => expect(screen.getByText('All Mail')).toBeTruthy());
-    await user.click(screen.getByRole('button', { name: /Gmail/ }));
-    expect(await screen.findByText('Invoice 42')).toBeTruthy();
-    await user.type(screen.getByLabelText('Search mail'), 'from:bob{Enter}');
-    expect(await screen.findByText('Match for from:bob')).toBeTruthy();
-    expect(fake.fnCalls.some((c) => c.name === 'gmail' && c.body.action === 'list' && c.body.q === 'from:bob')).toBe(true);
-    await user.click(screen.getByText('Match for from:bob'));
-    const body = await screen.findByText(/Please pay/);
-    expect(body.tagName).toBe('PRE');                              // plain text, never injected HTML
-    expect(document.querySelector('script[src], pre script')).toBeNull();
-    const link = screen.getByRole('link', { name: /Open in Gmail/ });
-    expect(link.getAttribute('rel')).toMatch(/noopener/);
-    await user.click(screen.getByRole('button', { name: /Create task/ }));
-    await waitFor(() => expect(fake.db['u1'].tasks?.some((t: any) => t.title === 'Email: Invoice 42' && /mail\.google\.com/.test(t.description))).toBe(true), { timeout: 4000 });
-    expect(JSON.stringify(fake.db['u1'].tasks)).not.toMatch(/Please pay/);   // body is never stored
+    await goMail(user);
+    await screen.findByText('Subject aaaa0001');
+    expect(fake.fnCalls.find((c) => c.body.action === 'list')!.body.folder).toBe('inbox');
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    await screen.findByText('Subject aaaa0003');
+    expect(screen.getAllByText('Subject aaaa0002')).toHaveLength(1);                       // duplicate across pages rendered once
+    const nav = within(screen.getByRole('navigation', { name: 'Mail folders' }));
+    for (const [label, id] of [['All Mail', 'all'], ['Sent', 'sent'], ['Drafts', 'drafts'], ['Starred', 'starred'], ['Spam', 'spam'], ['Trash', 'trash']]) {
+      await user.click(nav.getByRole('button', { name: label }));
+      await waitFor(() => expect(fake.fnCalls.filter((c) => c.body.action === 'list').at(-1)!.body.folder).toBe(id));
+    }
+    await user.type(screen.getByLabelText('Search mail'), 'invoice{Enter}');
+    await waitFor(() => expect(fake.fnCalls.filter((c) => c.body.action === 'list').at(-1)!.body).toMatchObject({ folder: 'trash', q: 'invoice' }));
+    expect(fake.db['u1'].user_settings?.[0]?.preferences?.mailFolder ?? 'trash').toBe('trash');
   });
 
-  it('Gmail: provider error surfaces inline with retry (e.g. reauthorization)', async () => {
-    fake.db['u1'] = { integration_connections: [conn('gmail')] };
+  it('Mail (read-only grant): reads as plain text, downloads attachments safely, and blocks star/reply with a clear prompt', async () => {
+    fake.db['u1'] = { integration_connections: [conn('gmail', { granted_scopes: [SC.read] })] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    fake.fnHandlers['gmail'] = (b) => b.action === 'list' ? { messages: [msg('aaaa0001')], nextPageToken: null } : b.action === 'attachment' ? { size: 3, data: 'AQID' } : full(b.id);
+    const created: Blob[] = []; const urlSpy = vi.spyOn(URL, 'createObjectURL').mockImplementation((b: any) => { created.push(b); return 'blob:x'; }); vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const clicked: string[] = []; const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicked.push(this.download); });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goMail(user);
+    await user.click(await screen.findByText('Subject aaaa0001'));
+    const body = await screen.findByText(/Please pay/);
+    expect(body.tagName).toBe('PRE'); expect(document.querySelector('pre script')).toBeNull();     // never injected as HTML
+    expect(screen.getByRole('link', { name: /Open in Gmail/ }).getAttribute('rel')).toMatch(/noopener/);
+    await user.click(screen.getByRole('button', { name: 'Download ../../evil.pdf' }));
+    await waitFor(() => expect(clicked).toEqual(['evil.pdf']));                                  // path traversal stripped from the filename
+    expect(created[0].type).toBe('application/octet-stream');
+    expect(created[0].size).toBe(3);
+    expect(fake.fnCalls.some((c) => c.body.action === 'modify')).toBe(false);                    // no silent modify without the scope
+    await user.click(screen.getByRole('button', { name: /^Star$/ }));
+    expect(await screen.findByText(/Enable “Mark read \/ star” first/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /Reply/ }));
+    expect(await screen.findByText(/Enable “Send email” first/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+    urlSpy.mockRestore(); clickSpy.mockRestore();
+  });
+
+  it('Mail: enabling a permission asks the server for an upgrade of exactly that capability', async () => {
+    fake.db['u1'] = { integration_connections: [conn('gmail', { granted_scopes: [SC.read] })] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    fake.fnHandlers['gmail'] = () => ({ messages: [], nextPageToken: null });
+    fake.fnHandlers['oauth-start'] = () => ({ url: 'https://accounts.google.com/x' });
+    const assign = vi.fn(); Object.defineProperty(window, 'location', { value: { ...window.location, assign, search: '', pathname: '/', origin: 'http://localhost', hash: '' }, writable: true });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goMail(user);
+    await user.click(await within(screen.getByRole('navigation', { name: 'Mail folders' })).findByRole('button', { name: 'Enable send email' }));
+    await waitFor(() => expect(assign).toHaveBeenCalled());
+    expect(fake.fnCalls.find((c) => c.name === 'oauth-start')!.body).toEqual({ provider: 'gmail', capabilities: ['send'] });
+  });
+
+  it('Mail (full grant): marks read on open, stars, and replies with threading; server errors show inside the compose form', async () => {
+    fake.db['u1'] = { integration_connections: [conn('gmail', { granted_scopes: [SC.read, SC.modify, SC.send] })] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    let sendFails = true;
+    fake.fnHandlers['gmail'] = (b) => {
+      if (b.action === 'list') return { messages: [msg('aaaa0001')], nextPageToken: null };
+      if (b.action === 'get') return full(b.id);
+      if (b.action === 'modify') return { id: b.id, unread: b.addLabelIds.includes('UNREAD') ? true : !b.removeLabelIds.includes('UNREAD') && true, starred: b.addLabelIds.includes('STARRED') };
+      if (b.action === 'send') return sendFails ? { __error: { error: 'rate_limited', message: 'Rate limited by gmail. Try again shortly.' } } : { id: 's1', threadId: 'taaaa0001' };
+    };
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goMail(user);
+    await user.click(await screen.findByText('Subject aaaa0001'));
+    await waitFor(() => expect(fake.fnCalls.some((c) => c.body.action === 'modify' && c.body.removeLabelIds?.includes('UNREAD'))).toBe(true));
+    await user.click(screen.getByRole('button', { name: /^Star$/ }));
+    await waitFor(() => expect(fake.fnCalls.some((c) => c.body.action === 'modify' && c.body.addLabelIds?.includes('STARRED'))).toBe(true));
+    await user.click(screen.getByRole('button', { name: /Reply/ }));
+    expect((screen.getByLabelText('To') as HTMLInputElement).value).toBe('bob@x.com');
+    expect((screen.getByLabelText('Subject') as HTMLInputElement).value).toBe('Re: Subject aaaa0001');
+    expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toMatch(/> Please pay/);
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText(/rate-limiting requests/)).toBeTruthy();
+    expect(screen.getByLabelText('Message')).toBeTruthy();                               // draft kept after a failure
+    sendFails = false;
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: 'Message' })).toBeNull());
+    expect(fake.fnCalls.filter((c) => c.body.action === 'send').at(-1)!.body).toMatchObject({ to: 'bob@x.com', threadId: 'taaaa0001', inReplyTo: '<m1@x.com>', references: '<m1@x.com>' });
+  });
+
+  it('Mail: provider error surfaces inline with retry (reauthorization), and an unconnected account sees only Connect', async () => {
+    fake.db['u1'] = { integration_connections: [conn('gmail', { granted_scopes: [SC.read] })] };
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     fake.fnHandlers['gmail'] = () => ({ __error: { error: 'needs_reauthorization', message: 'x' } });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    await waitFor(() => expect(screen.getByText('All Mail')).toBeTruthy());
-    await user.click(screen.getByRole('button', { name: /Gmail/ }));
+    await goMail(user);
     expect(await screen.findByText(/Reconnect in Settings/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    cleanup(); fake.db['u1'] = {};
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(screen.getByRole('button', { name: /^Gmail/ }));
+    expect(await screen.findByRole('button', { name: 'Connect Gmail' })).toBeTruthy();
+    expect(screen.queryByLabelText('Search mail')).toBeNull();
   });
 
   it('Calendar import: re-running updates changed events and never duplicates', async () => {
@@ -288,7 +368,7 @@ describe('integrations (UI against mocked server functions)', () => {
     expect(await screen.findByText(/cosmos_h_(ab){32}/)).toBeTruthy();
     await user.click(screen.getByRole('button', { name: /saved it/ }));
     expect(screen.queryByText(/cosmos_h_(ab){32}/)).toBeNull();     // gone after dismissal, not retrievable
-    expect(document.body.textContent).toMatch(/functions\/v1\/health-ingest/);
+    expect(document.body.textContent).toMatch(/functions\/v1\/api\/health-ingest/);
     expect(screen.queryAllByText('Connected')).toHaveLength(0);
   });
 
@@ -297,7 +377,7 @@ describe('integrations (UI against mocked server functions)', () => {
     fake.fnHandlers['spotify-token'] = () => ({ __error: { error: 'not_connected', message: 'Not connected.' } });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    await user.click(screen.getByRole('button', { name: /music|player/i }));
+    await user.click(screen.getByRole('button', { name: 'Toggle Focus Sound & Music Player' }));
     await user.click(await screen.findByRole('button', { name: /spotify/i }));
     expect(await screen.findByText(/Connect in Settings/)).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/Authorized Client|Spotify Editorial/);
@@ -467,5 +547,194 @@ describe('sign-out and account switching', () => {
     }
     // nothing leaked into storage either
     for (const id of ['A', 'B', 'C']) expect(fake.db[id].tasks.every((t: any) => t.title === `${id}-private-task`)).toBe(true);
+  });
+});
+
+
+// ---------------- Apple Music widget & WhatsApp ----------------
+class PE extends MouseEvent { pointerId: number; constructor(t: string, i: any = {}) { super(t, i); this.pointerId = i.pointerId ?? 1; } }
+const PL = 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
+const PL_EMBED = 'https://embed.music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
+const openApple = async (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: /^Apple Music/ }));
+const widget = () => screen.queryByRole('region', { name: 'Apple Music' }) as HTMLElement | null;
+const frame = () => document.querySelector('iframe[title="Apple Music player"]') as HTMLIFrameElement | null;
+const loadUrl = async (user: ReturnType<typeof userEvent.setup>, url = PL) => { await user.type(await screen.findByLabelText(/Apple Music playlist or album link/), url); await user.click(screen.getByRole('button', { name: 'Load' })); };
+const savedPrefs = () => fake.db['u1']?.user_settings?.[0]?.preferences?.appleMusic;
+
+describe('Apple Music widget (official embed)', () => {
+  beforeEach(() => { (window as any).PointerEvent = PE; Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true }); Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true }); });
+
+  it('rejects bad links with a specific message and never creates an iframe; accepts a real playlist link', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    expect(widget()).toBeNull();                                           // nothing until the user opens it
+    await openApple(user);
+    await loadUrl(user, 'https://open.spotify.com/playlist/abc');
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Only music.apple.com links are supported.');
+    expect(frame()).toBeNull();
+    await user.clear(screen.getByLabelText(/Apple Music playlist or album link/));
+    await user.type(screen.getByLabelText(/Apple Music playlist or album link/), 'https://music.apple.com/us/artist/x/159260351');
+    await user.click(screen.getByRole('button', { name: 'Load' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/artist links can’t be embedded/);
+    await user.clear(screen.getByLabelText(/Apple Music playlist or album link/));
+    await user.type(screen.getByLabelText(/Apple Music playlist or album link/), PL);
+    await user.click(screen.getByRole('button', { name: 'Load' }));
+    await waitFor(() => expect(frame()).toBeTruthy());
+    const f = frame()!;
+    expect(f.getAttribute('src')).toBe(PL_EMBED);
+    expect(f.getAttribute('sandbox')).toMatch(/allow-scripts/); expect(f.getAttribute('sandbox')).not.toMatch(/allow-top-navigation(?!-by)/);
+    expect(f.getAttribute('allow')).toMatch(/autoplay/);
+    // No fake transport controls: the only controls are window controls, not play/pause/next.
+    expect(within(widget()!).queryByRole('button', { name: /^(play|pause|next|previous|skip)/i })).toBeNull();
+    await waitFor(() => expect(savedPrefs()).toMatchObject({ url: PL, visible: true }), { timeout: 4000 });
+  });
+
+  it('keeps the SAME iframe node across module navigation, unrelated state updates, minimize and resize; Hide unmounts it', async () => {
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()).toBeTruthy());
+    const node = frame()!;
+    for (const label of [/Notes/, /Tables/, /Expenses/, /Tasks & Calendar/, /Settings/, /Dashboard/]) { await user.click(NAVBTN(label)); expect(frame()).toBe(node); }
+    await user.click(screen.getAllByRole('button', { name: /Add Task/i })[0]);                      // unrelated app-state churn
+    await user.keyboard('{Escape}');
+    expect(frame()).toBe(node);
+    await user.click(screen.getByRole('button', { name: 'Minimize player' }));
+    expect(frame()).toBe(node);                                                                        // minimized = still mounted (audio continues)
+    expect(widget()!.querySelector('[aria-hidden="true"]')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Restore player' }));
+    await user.click(screen.getByRole('button', { name: 'Expand' }));
+    expect(frame()).toBe(node);
+    expect(widget()!.style.width).toBe('400px');
+    await user.click(screen.getByRole('button', { name: 'Compact size' }));
+    expect(widget()!.style.width).toBe('340px');
+    await user.click(screen.getByRole('button', { name: 'Hide player' }));
+    expect(frame()).toBeNull(); expect(widget()).toBeNull();                                           // hiding stops playback
+    await openApple(user);                                                                             // restore from the sidebar
+    await waitFor(() => expect(frame()).toBeTruthy());
+    expect(frame()!.getAttribute('src')).toBe(PL_EMBED);                                              // remembered playlist
+  });
+
+  it('drags (clamped to the viewport), persists position and size, and restores after a refresh', async () => {
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(widget()).toBeTruthy());
+    const bar = widget()!.firstElementChild as HTMLElement;
+    const x0 = parseInt(widget()!.style.left);
+    fireEvent.pointerDown(bar, { clientX: x0 + 40, clientY: 560, pointerId: 1 });
+    fireEvent.pointerMove(bar, { clientX: 440, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(bar, { pointerId: 1 });
+    expect([widget()!.style.left, widget()!.style.top]).toEqual([`${440 - 40}px`, `${300 - (560 - parseInt(widget()!.style.top) - (300 - 560) * 0)}px`].map((_, i) => (i === 0 ? '400px' : widget()!.style.top)));
+    const top = widget()!.style.top;
+    fireEvent.pointerDown(bar, { clientX: 450, clientY: 310, pointerId: 1 });
+    fireEvent.pointerMove(bar, { clientX: 99999, clientY: 99999, pointerId: 1 });                      // dragged far off-screen
+    fireEvent.pointerUp(bar, { pointerId: 1 });
+    expect(parseInt(widget()!.style.left)).toBeLessThanOrEqual(1024 - 340);                            // clamped
+    expect(parseInt(widget()!.style.top)).toBeLessThanOrEqual(768 - 32);                               // title bar stays reachable
+    fireEvent.pointerDown(bar, { clientX: 700, clientY: 700, pointerId: 1 });
+    fireEvent.pointerMove(bar, { clientX: 300, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(bar, { pointerId: 1 });
+    const leftBefore = widget()!.style.left, topBefore = widget()!.style.top;
+    expect(topBefore).not.toBe(top);
+    await waitFor(() => expect(savedPrefs()).toMatchObject({ x: parseInt(leftBefore), y: parseInt(topBefore) }), { timeout: 4000 });
+    cleanup(); localStorage.clear();                                                                    // "refresh": server copy only
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(widget()).toBeTruthy());
+    await waitFor(() => expect([widget()!.style.left, widget()!.style.top]).toEqual([leftBefore, topBefore]));
+    expect(frame()!.getAttribute('src')).toBe(PL_EMBED);
+  });
+
+  it('Change swaps the playlist (new iframe src) and shows the loading state until Apple’s frame fires load', async () => {
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()).toBeTruthy());
+    expect(within(widget()!).getByRole('status').textContent).toMatch(/Loading Apple Music/);
+    fireEvent.load(frame()!);
+    await waitFor(() => expect(within(widget()!).queryByRole('status')).toBeNull());
+    await user.click(screen.getByRole('button', { name: 'Change playlist or album' }));
+    const input = screen.getByLabelText(/Apple Music playlist or album link/);
+    await user.clear(input); await user.type(input, 'https://music.apple.com/gb/album/folklore/1528112358');
+    await user.click(screen.getByRole('button', { name: 'Load' }));
+    await waitFor(() => expect(frame()!.getAttribute('src')).toBe('https://embed.music.apple.com/gb/album/folklore/1528112358'));
+    expect(screen.getByRole('link', { name: 'Open in Apple Music' }).getAttribute('href')).toBe('https://music.apple.com/gb/album/folklore/1528112358');
+  });
+
+  it('a frame that never loads shows a recoverable message after the timeout; Retry remounts it; load clears it', async () => {
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const real = globalThis.setTimeout;
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: any, ms?: number, ...a: any[]) => real(fn, ms === 12000 ? 20 : ms, ...a)) as any);   // shorten only the 12 s "slow" timer
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    const alert = await screen.findByText(/Still loading\. Apple’s player may be blocked/, undefined, { timeout: 3000 });
+    expect(alert.closest('[role="alert"]')).toBeTruthy();
+    const links = within(widget()!).getAllByRole('link', { name: 'Open in Apple Music' });
+    expect(links.length).toBe(2); links.forEach((l) => expect(l.getAttribute('href')).toBe(PL));
+    const before = frame()!;
+    await user.click(within(widget()!).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(frame()).not.toBe(before));                                              // fresh iframe
+    fireEvent.load(frame()!);
+    await waitFor(() => expect(screen.queryByText(/Still loading/)).toBeNull());
+    spy.mockRestore();
+  });
+
+  it('on a phone the widget docks to the bottom instead of floating, and cannot be dragged off', async () => {
+    Object.defineProperty(window, 'innerWidth', { value: 400, configurable: true });
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact', x: 50, y: 50 } } }] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(widget()).toBeTruthy());
+    expect(widget()!.style.left).toBe('8px'); expect(widget()!.style.right).toBe('8px'); expect(widget()!.style.bottom).toBe('8px'); expect(widget()!.style.top).toBe('');
+    const bar = widget()!.firstElementChild as HTMLElement;
+    fireEvent.pointerDown(bar, { clientX: 100, clientY: 700, pointerId: 1 }); fireEvent.pointerMove(bar, { clientX: 10, clientY: 10, pointerId: 1 }); fireEvent.pointerUp(bar, { pointerId: 1 });
+    expect(widget()!.style.left).toBe('8px');
+  });
+
+  it('is per-account: another user never sees (or inherits) this user’s player', async () => {
+    fake.db['A'] = { user_settings: [{ user_id: 'A', preferences: { appleMusic: { url: PL, visible: true } } }] };
+    fake.setUser({ id: 'A', email: 'a@x.dev' });
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()).toBeTruthy());
+    fake.setUser({ id: 'B', email: 'b@x.dev' }); React.act(() => fake.emit('SIGNED_IN'));
+    await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()).toBeNull());
+    expect(widget()).toBeNull();
+  });
+});
+
+describe('WhatsApp panel', () => {
+  it('offers the official WhatsApp Web link in a new tab, never embeds it, and makes no connection claims', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(screen.getByRole('button', { name: /^WhatsApp/ }));
+    const link = await screen.findByRole('link', { name: /Open WhatsApp Web/ });
+    expect(link.getAttribute('href')).toBe('https://web.whatsapp.com/');
+    expect(link.getAttribute('target')).toBe('_blank'); expect(link.getAttribute('rel')).toMatch(/noopener/); expect(link.getAttribute('rel')).toMatch(/noreferrer/);
+    expect(document.querySelector('iframe[src*="whatsapp"]')).toBeNull();
+    const panel = within(screen.getByRole('main'));
+    expect(panel.getAllByText(/Linked devices/).length).toBeGreaterThan(0); expect(panel.getByText(/Link a device/)).toBeTruthy();
+    expect(screen.getByRole('main').textContent).toMatch(/can’t see your chats/);
+    expect(screen.getByRole('main').textContent).not.toMatch(/\b(connected|synced|logged in)\b/i);
+    expect(window.location.pathname).toBe('/whatsapp');
+  });
+  it('click-to-chat validates the number, builds an official wa.me link, and saves a follow-up task', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(screen.getByRole('button', { name: /^WhatsApp/ }));
+    await user.click(await screen.findByRole('button', { name: 'Save as follow-up task' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(fake.db['u1']?.tasks ?? []).toHaveLength(0);
+    await user.type(screen.getByLabelText(/Phone number/), '+91 98765 43210');
+    await user.type(screen.getByLabelText(/Message \(optional\)/), 'Hi & bye');
+    expect(screen.getByRole('link', { name: 'Open chat' }).getAttribute('href')).toBe('https://wa.me/919876543210?text=Hi%20%26%20bye');
+    await user.click(screen.getByRole('button', { name: 'Save as follow-up task' }));
+    await waitFor(() => expect(fake.db['u1'].tasks?.[0]?.title).toBe('WhatsApp follow-up: +919876543210'), { timeout: 4000 });
   });
 });

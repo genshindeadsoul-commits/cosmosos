@@ -11,11 +11,12 @@ const FRIENDLY: Record<string, string> = {
   rate_limited: 'The provider is rate-limiting requests. Wait a moment and retry.',
   forbidden: 'The provider denied this request (permission or account restriction).',
   unauthorized: 'Your session expired. Sign in again.',
+  too_large: 'That file is too large to download here. Open it in Gmail instead.',
 };
 
 /** Invoke an Edge Function as the signed-in user and turn failures into readable errors. */
 export async function callFn<T>(name: string, body: unknown = {}): Promise<T> {
-  const { data, error } = await requireSupabase().functions.invoke(name, { body: body as Record<string, unknown> });
+  const { data, error } = await requireSupabase().functions.invoke(`api/${name}`, { body: body as Record<string, unknown> });
   if (error) {
     let code = 'internal', message = error.message;
     try {
@@ -30,8 +31,10 @@ export async function callFn<T>(name: string, body: unknown = {}): Promise<T> {
   return data as T;
 }
 
-export interface GmailMessageSummary { id: string; threadId: string; from: string; subject: string; date: string; snippet: string; unread: boolean }
-export interface GmailMessageFull { id: string; from: string; subject: string; date: string; bodyText: string; attachments: { filename: string; mimeType: string; size: number }[]; webLink: string }
+export interface GmailMessageSummary { id: string; threadId: string; from: string; subject: string; date: string; snippet: string; unread: boolean; starred: boolean; internalDate: number | null }
+export interface GmailAttachment { filename: string; mimeType: string; size: number; attachmentId: string }
+export interface GmailMessageFull { id: string; threadId: string; from: string; to: string; cc: string; replyTo: string; subject: string; date: string; messageId: string; references: string; unread: boolean; starred: boolean; bodyText: string; attachments: GmailAttachment[]; webLink: string }
+export interface SendInput { to: string; cc?: string; subject: string; body: string; threadId?: string; inReplyTo?: string; references?: string }
 export interface ImportedEvent { providerId: string; title: string; description?: string; date: string; startTime: string; endTime: string; location?: string }
 
 /** Accepts a full Google Sheets URL or a bare id; returns null if neither looks valid. */

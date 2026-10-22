@@ -16,6 +16,7 @@ import {
   BookOpen,
   MessageCircle,
   Mail,
+  Music2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -60,8 +61,7 @@ export const Sidebar: React.FC = () => {
     setSelectedTableId,
     userProfile,
     setProfileOpen,
-    setWhatsAppOpen,
-    setGmailOpen,
+    openMusicWidget,
   } = useApp();
   const { isAdmin } = useAuth();
   const { isConnected } = useIntegrations();
@@ -153,21 +153,21 @@ export const Sidebar: React.FC = () => {
             <div className="space-y-0.5">
               <button
                 onClick={() => {
-                  setWhatsAppOpen(true);
+                  handleNavClick('whatsapp');
                   if (window.innerWidth < 768) setSidebarOpen(false);
                 }}
                 className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
               >
                 <div className="flex items-center gap-2.5">
                   <MessageCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>WhatsApp Chat</span>
+                  <span>WhatsApp</span>
                 </div>
-                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Direct</span>
+                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Web</span>
               </button>
 
               <button
                 onClick={() => {
-                  setGmailOpen(true);
+                  handleNavClick('mail');
                   if (window.innerWidth < 768) setSidebarOpen(false);
                 }}
                 className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
@@ -176,7 +176,21 @@ export const Sidebar: React.FC = () => {
                   <Mail className="h-4 w-4 text-rose-500 dark:text-rose-400" />
                   <span>Gmail</span>
                 </div>
-                <span className="text-[10px] font-semibold text-[#8A8E85]">{isConnected('gmail') ? 'All Mail' : 'Not connected'}</span>
+                <span className="text-[10px] font-semibold text-[#8A8E85]">{isConnected('gmail') ? 'Connected' : 'Not connected'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  openMusicWidget();
+                  if (window.innerWidth < 768) setSidebarOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Music2 className="h-4 w-4 text-[#FA243C]" />
+                  <span>Apple Music</span>
+                </div>
+                <span className="text-[10px] font-semibold text-[#8A8E85]">Player</span>
               </button>
             </div>
           </div>

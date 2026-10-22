@@ -2,14 +2,14 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import type { IntegrationAccount } from '../types';
 import { INTEGRATION_CATALOG } from '../data/integrations';
 import { requireSupabase } from '../lib/supabase';
-import { callFn, GmailMessageFull, GmailMessageSummary, ImportedEvent, IntegrationError } from '../lib/integrationsApi';
+import { callFn, GmailMessageFull, GmailMessageSummary, ImportedEvent, IntegrationError, SendInput } from '../lib/integrationsApi';
 import { useApp } from './AppContext';
 import { useAuth } from './AuthContext';
 
 /** UI id -> provider key stored in integration_connections / used by Edge Functions. */
 const OAUTH_PROVIDER: Record<string, string> = { gcal: 'google_calendar', gmail: 'gmail', gsheets: 'google_sheets', spotify: 'spotify' };
 
-interface Connection { provider: string; status: string; account_label: string | null; last_synced_at: string | null; last_error: string | null }
+interface Connection { provider: string; status: string; account_label: string | null; last_synced_at: string | null; last_error: string | null; granted_scopes: string[] | null }
 interface IngestToken { id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null }
 
 interface IntegrationsContextType {
@@ -20,8 +20,13 @@ interface IntegrationsContextType {
   disconnect: (uiId: string) => Promise<void>;
   sync: (uiId: string) => Promise<void>;
   busy: string | null;
-  gmailList: (q: string, pageToken?: string) => Promise<{ messages: GmailMessageSummary[]; nextPageToken: string | null }>;
+  gmailScopes: string[];
+  connectGmail: (capabilities?: ('modify' | 'send')[]) => Promise<void>;
+  gmailList: (folder: string, q: string, pageToken?: string) => Promise<{ messages: GmailMessageSummary[]; nextPageToken: string | null }>;
   gmailGet: (id: string) => Promise<GmailMessageFull>;
+  gmailAttachment: (id: string, attachmentId: string) => Promise<{ size: number; data: string }>;
+  gmailModify: (id: string, add: string[], remove: string[]) => Promise<{ unread: boolean; starred: boolean }>;
+  gmailSend: (m: SendInput) => Promise<{ id: string; threadId: string }>;
   sheetsPreview: (spreadsheetId: string, range?: string) => Promise<{ title: string; values: string[][] }>;
   healthTokens: IngestToken[];
   createHealthToken: (label: string) => Promise<string>;
@@ -41,7 +46,7 @@ export const IntegrationsProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const refresh = useCallback(async () => {
     const sb = requireSupabase();
     const [c, t] = await Promise.all([
-      sb.from('integration_connections').select('provider,status,account_label,last_synced_at,last_error'),
+      sb.from('integration_connections').select('provider,status,account_label,last_synced_at,last_error,granted_scopes'),
       sb.from('health_ingest_tokens').select('id,label,created_at,last_used_at,revoked_at').order('created_at', { ascending: false }),
     ]);
     if (!c.error) setConnections(Object.fromEntries((c.data ?? []).map((r: Connection) => [r.provider, r])));
@@ -108,9 +113,17 @@ export const IntegrationsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   });
 
-  const gmailList = async (q: string, pageToken?: string) =>
-    callFn<{ messages: GmailMessageSummary[]; nextPageToken: string | null }>('gmail', { action: 'list', q, pageToken });
+  const gmailScopes = connections['gmail']?.status === 'connected' ? connections['gmail'].granted_scopes ?? [] : [];
+  const connectGmail = (capabilities?: ('modify' | 'send')[]) => guard('gmail', async () => {
+    const { url } = await callFn<{ url: string }>('oauth-start', { provider: 'gmail', ...(capabilities?.length ? { capabilities } : {}) });
+    window.location.assign(url);
+  });
+  const gmailList = async (folder: string, q: string, pageToken?: string) =>
+    callFn<{ messages: GmailMessageSummary[]; nextPageToken: string | null }>('gmail', { action: 'list', folder, q, pageToken });
   const gmailGet = async (id: string) => callFn<GmailMessageFull>('gmail', { action: 'get', id });
+  const gmailAttachment = async (id: string, attachmentId: string) => callFn<{ size: number; data: string }>('gmail', { action: 'attachment', id, attachmentId });
+  const gmailModify = async (id: string, add: string[], remove: string[]) => callFn<{ unread: boolean; starred: boolean }>('gmail', { action: 'modify', id, addLabelIds: add, removeLabelIds: remove });
+  const gmailSend = async (m: SendInput) => callFn<{ id: string; threadId: string }>('gmail', { action: 'send', ...m });
   const sheetsPreview = async (spreadsheetId: string, range?: string) =>
     callFn<{ title: string; values: string[][] }>('sheets-preview', { spreadsheetId, range });
 
@@ -127,7 +140,7 @@ export const IntegrationsProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   return (
-    <Ctx.Provider value={{ integrations, connectionsLoaded, isConnected, connect, disconnect, sync, busy, gmailList, gmailGet, sheetsPreview, healthTokens, createHealthToken, revokeHealthToken }}>
+    <Ctx.Provider value={{ integrations, connectionsLoaded, isConnected, connect, disconnect, sync, busy, gmailScopes, connectGmail, gmailList, gmailGet, gmailAttachment, gmailModify, gmailSend, sheetsPreview, healthTokens, createHealthToken, revokeHealthToken }}>
       {children}
     </Ctx.Provider>
   );

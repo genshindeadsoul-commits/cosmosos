@@ -1,6 +1,6 @@
 import { ambientAudio } from './ambientAudio';
 
-export type MusicProviderId = 'ambient' | 'spotify' | 'apple_music';
+export type MusicProviderId = 'ambient' | 'spotify';
 
 export interface ProviderPlaybackState {
   provider: MusicProviderId;
@@ -22,7 +22,7 @@ const AMBIENT_TITLES = {
 type Preset = keyof typeof AMBIENT_TITLES;
 
 /**
- * Ambient = locally synthesized Web Audio (real). Spotify / Apple Music = NOT implemented:
+ * Ambient = locally synthesized Web Audio (real). Spotify = remote control via the Web API (see AppContext). Apple Music lives in AppleMusicWidget (official embed):
  * they report "not connected" and never claim playback. Real support needs the official
  * Spotify Web Playback SDK / MusicKit JS flows with owner credentials (see docs/SETUP.md).
  */
@@ -31,7 +31,7 @@ export class MusicAdapterRegistry {
 
   constructor() {
     const saved = localStorage.getItem('cosmos_active_music_provider');
-    if (saved === 'spotify' || saved === 'apple_music' || saved === 'ambient') this.activeProvider = saved;
+    if (saved === 'spotify' || saved === 'ambient') this.activeProvider = saved;
   }
 
   getActiveProvider(): MusicProviderId { return this.activeProvider; }
@@ -44,7 +44,7 @@ export class MusicAdapterRegistry {
 
   getCurrentPlaybackState(preset: Preset = 'forest'): ProviderPlaybackState {
     if (this.activeProvider !== 'ambient') {
-      const name = this.activeProvider === 'spotify' ? 'Spotify' : 'Apple Music';
+      const name = 'Spotify';
       return { provider: this.activeProvider, isPlaying: false, currentTrack: `${name}: not connected`,
         artist: 'Authorization required', progressSeconds: 0, durationSeconds: 0, available: false };
     }
@@ -65,7 +65,6 @@ export class MusicAdapterRegistry {
 
   openExternalApp() {
     if (this.activeProvider === 'spotify') window.open('https://open.spotify.com', '_blank', 'noopener,noreferrer');
-    else if (this.activeProvider === 'apple_music') window.open('https://music.apple.com', '_blank', 'noopener,noreferrer');
   }
 }
 

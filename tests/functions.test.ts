@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { encryptJson, decryptJson, sha256Hex } from '../supabase/functions/_shared/crypto.ts';
-import * as H from '../supabase/functions/_shared/handlers.ts';
-import { extractBody, normalizeGoogleEvent, validateHealthPayload } from '../supabase/functions/_shared/parse.ts';
-import { signAppleDeveloperToken } from '../supabase/functions/_shared/jwt.ts';
-import { HttpError, type Ctx, type DbPort, type ConnPatch } from '../supabase/functions/_shared/ports.ts';
+import { encryptJson, decryptJson, sha256Hex } from '../supabase/functions/api/_shared/crypto.ts';
+import * as H from '../supabase/functions/api/_shared/handlers.ts';
+import { extractBody, normalizeGoogleEvent, validateHealthPayload } from '../supabase/functions/api/_shared/parse.ts';
+import { gmailAction, buildRawMessage, parseRecipients } from '../supabase/functions/api/_shared/gmailApi.ts';
+import { HttpError, type Ctx, type DbPort, type ConnPatch } from '../supabase/functions/api/_shared/ports.ts';
 
 const KEY = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64');
 const ENV = { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec', SPOTIFY_CLIENT_ID: 'sid', SPOTIFY_CLIENT_SECRET: 'ssec',
@@ -16,7 +16,7 @@ function memDb() {
   const db: DbPort = {
     async insertState(state, userId, provider) { states.set(state, { userId, provider, exp: Date.now() + 600000 }); },
     async consumeState(s) { const r = states.get(s); states.delete(s); return !r || r.exp < Date.now() ? null : { userId: r.userId, provider: r.provider }; },
-    async getConnection(u, p) { const c = conns.get(`${u}|${p}`); return c ? { id: c.id, status: c.status } : null; },
+    async getConnection(u, p) { const c = conns.get(`${u}|${p}`); return c ? { id: c.id, status: c.status, granted_scopes: c.granted_scopes ?? [] } : null; },
     async saveConnection(u, p, patch: ConnPatch) { const k = `${u}|${p}`; const c = conns.get(k) ?? { id: `c${++n}`, status: 'not_connected' }; conns.set(k, { ...c, ...patch }); return c.id; },
     async getSecret(id) { return secrets.get(id) ?? null; }, async saveSecret(id, e) { secrets.set(id, e); }, async deleteSecret(id) { secrets.delete(id); },
     async findIngestToken(h) { return tokens.get(h) ?? null; }, async touchIngestToken() {},
@@ -36,8 +36,8 @@ function mkCtx(routes: Route, mem = memDb(), env: Record<string, string | undefi
   const ctx: Ctx = { env, db: mem.db, fetch: f, now: () => new Date('2026-10-20T12:00:00Z') };
   return { ctx, mem, calls };
 }
-const connect = async (mem: ReturnType<typeof memDb>, user: string, provider: any, status: any = 'connected', rt = 'RT-secret') => {
-  const id = await mem.db.saveConnection(user, provider, { status });
+const connect = async (mem: ReturnType<typeof memDb>, user: string, provider: any, status: any = 'connected', rt = 'RT-secret', scopes: string[] = []) => {
+  const id = await mem.db.saveConnection(user, provider, { status, granted_scopes: scopes });
   await mem.db.saveSecret(id, await encryptJson({ refresh_token: rt }, KEY));
 };
 const refreshOk: Route = (u) => (u.includes('oauth2.googleapis.com/token') ? { body: { access_token: 'AT', expires_in: 3600 } } : undefined);
@@ -119,9 +119,9 @@ test('callback: state is one-time; reuse, forgery, and declined consent are all 
 test('refresh: invalid_grant marks needs_reauthorization; users cannot borrow each other\'s connection', async () => {
   const { ctx, mem } = mkCtx((u) => (u.includes('oauth2.googleapis.com/token') ? { status: 400, body: { error: 'invalid_grant' } } : undefined));
   await connect(mem, 'A', 'gmail');
-  await fails(H.gmailAction('A', { action: 'list' }, ctx), 401, 'needs_reauthorization');
+  await fails(gmailAction('A', { action: 'list' }, ctx), 401, 'needs_reauthorization');
   assert.equal(mem.conns.get('A|gmail').status, 'needs_reauthorization');
-  await fails(H.gmailAction('B', { action: 'list' }, ctx), 409, 'not_connected');   // B has no connection of their own
+  await fails(gmailAction('B', { action: 'list' }, ctx), 409, 'not_connected');   // B has no connection of their own
 });
 test('refresh: a rotated refresh token is re-encrypted and saved', async () => {
   const { ctx, mem } = mkCtx((u) => (u.includes('accounts.spotify.com/api/token') ? { body: { access_token: 'SAT', expires_in: 3600, refresh_token: 'RT-new' } } : undefined));
@@ -147,11 +147,11 @@ test('gmail list: All Mail semantics (no label filter), query passed through, me
     if (u.includes('/messages/aaaa1111bbbb2222')) return { body: { id: 'aaaa1111bbbb2222', threadId: 't', snippet: 'hi', labelIds: ['UNREAD'], payload: { headers: [{ name: 'From', value: 'Bob <b@x.com>' }, { name: 'Subject', value: 'Invoice' }, { name: 'Date', value: 'Mon, 19 Oct 2026' }] } } };
   });
   await connect(mem, 'A', 'gmail');
-  const r: any = await H.gmailAction('A', { action: 'list', q: 'from:bob older_than:1y' }, ctx);
+  const r: any = await gmailAction('A', { action: 'list', q: 'from:bob older_than:1y' }, ctx);
   const listUrl = new URL(calls.find((c) => c.url.includes('/messages?'))!.url);
   assert.equal(listUrl.searchParams.get('labelIds'), null);
   assert.equal(listUrl.searchParams.get('q'), 'from:bob older_than:1y');
-  assert.deepEqual(r.messages[0], { id: 'aaaa1111bbbb2222', threadId: 't', from: 'Bob <b@x.com>', subject: 'Invoice', date: 'Mon, 19 Oct 2026', snippet: 'hi', unread: true });
+  assert.deepEqual(r.messages[0], { id: 'aaaa1111bbbb2222', threadId: 't', from: 'Bob <b@x.com>', subject: 'Invoice', date: 'Mon, 19 Oct 2026', snippet: 'hi', unread: true, starred: false, internalDate: null });
   assert.equal(r.nextPageToken, 'NP');
   assert.equal((calls.at(-1)!.init!.headers as any).Authorization, 'Bearer AT');
 });
@@ -163,11 +163,11 @@ test('gmail get: rejects malformed ids (no path injection), returns plain text +
       { mimeType: 'application/pdf', filename: 'inv.pdf', body: { attachmentId: 'x', size: 10 } }] } } };
   });
   await connect(mem, 'A', 'gmail');
-  await fails(H.gmailAction('A', { action: 'get', id: '../../drafts' }, ctx), 400);
-  await fails(H.gmailAction('A', { action: 'nope' }, ctx), 400);
-  const r: any = await H.gmailAction('A', { action: 'get', id: 'aaaa1111bbbb2222' }, ctx);
+  await fails(gmailAction('A', { action: 'get', id: '../../drafts' }, ctx), 400);
+  await fails(gmailAction('A', { action: 'nope' }, ctx), 400);
+  const r: any = await gmailAction('A', { action: 'get', id: 'aaaa1111bbbb2222' }, ctx);
   assert.equal(r.bodyText, 'Hello plain');
-  assert.deepEqual(r.attachments, [{ filename: 'inv.pdf', mimeType: 'application/pdf', size: 10 }]);
+  assert.deepEqual(r.attachments, [{ filename: 'inv.pdf', mimeType: 'application/pdf', size: 10, attachmentId: 'x' }]);
   assert.equal(r.webLink, 'https://mail.google.com/mail/u/0/#all/aaaa1111bbbb2222');
   assert.equal(calls.filter((c) => c.url.includes('../')).length, 0);
 });
@@ -175,7 +175,7 @@ test('gmail errors: 429 => rate_limited, 401 from API => needs_reauthorization, 
   for (const [status, body, code] of [[429, {}, 'rate_limited'], [403, { error: { errors: [{ reason: 'rateLimitExceeded' }] } }, 'rate_limited'], [403, { error: 'denied' }, 'forbidden'], [401, {}, 'needs_reauthorization']] as const) {
     const { ctx, mem } = mkCtx((u) => (u.includes('oauth2') ? { body: { access_token: 'AT' } } : u.includes('/messages?') ? { status, body } : undefined));
     await connect(mem, 'A', 'gmail');
-    await fails(H.gmailAction('A', { action: 'list' }, ctx), status === 403 && code === 'rate_limited' ? 429 : status, code);
+    await fails(gmailAction('A', { action: 'list' }, ctx), status === 403 && code === 'rate_limited' ? 429 : status, code);
   }
 });
 test('html-only mail is reduced to text, scripts removed', () => {
@@ -209,22 +209,6 @@ test('sheets: validates spreadsheet id and range; returns capped values', async 
   await fails(H.sheetsPreview('A', { spreadsheetId: '../x' }, ctx), 400);
   const r: any = await H.sheetsPreview('A', { spreadsheetId: '1aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789', range: 'Sheet1!A1:C5' }, ctx);
   assert.deepEqual(r, { title: 'Budget', values: [['a', 'b'], ['1', '2']] });
-});
-
-// ---------- apple ----------
-test('apple developer token: valid ES256 JWT verifiable with the public key; server secrets required', async () => {
-  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
-  const pkcs8 = Buffer.from(await crypto.subtle.exportKey('pkcs8', kp.privateKey)).toString('base64');
-  const pem = `-----BEGIN PRIVATE KEY-----\n${pkcs8.match(/.{1,64}/g)!.join('\n')}\n-----END PRIVATE KEY-----`;
-  const tok = await signAppleDeveloperToken({ teamId: 'TEAM', keyId: 'KID', privateKeyPem: pem.replace(/\n/g, '\\n'), nowSec: 1000, ttlSec: 3600 });
-  const [h, p, s] = tok.split('.');
-  assert.deepEqual(JSON.parse(Buffer.from(h, 'base64url').toString()), { alg: 'ES256', kid: 'KID', typ: 'JWT' });
-  assert.deepEqual(JSON.parse(Buffer.from(p, 'base64url').toString()), { iss: 'TEAM', iat: 1000, exp: 4600 });
-  assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, kp.publicKey, Buffer.from(s, 'base64url'), new TextEncoder().encode(`${h}.${p}`)));
-  const { ctx } = mkCtx(() => undefined);
-  await fails(H.appleDeveloperToken(ctx), 501, 'not_configured');
-  const ok = mkCtx(() => undefined, memDb(), { ...ENV, APPLE_TEAM_ID: 'T', APPLE_KEY_ID: 'K', APPLE_PRIVATE_KEY: pem });
-  assert.equal((await H.appleDeveloperToken(ok.ctx)).token.split('.').length, 3);
 });
 
 // ---------- health ----------
@@ -264,5 +248,168 @@ test('disconnect: revokes at Google (best effort), deletes the stored secret, cl
   assert.equal(mem.secrets.size, 0);
   assert.equal(mem.conns.get('A|gmail').status, 'not_connected');
   assert.ok(calls.some((c) => c.url.includes('/revoke')));
-  await fails(H.gmailAction('A', { action: 'list' }, ctx), 409, 'not_connected');
+  await fails(gmailAction('A', { action: 'list' }, ctx), 409, 'not_connected');
+});
+
+// ---------- router: the single entrypoint's authentication rules ----------
+import { handleRequest } from '../supabase/functions/api/_shared/router.ts';
+const BASE = 'https://x.supabase.co/functions/v1/api';
+const verifier = (valid: Record<string, string>) => async (t: string) => valid[t] ?? null;
+const req = (route: string, init: RequestInit = {}) => new Request(`${BASE}/${route}`, { method: 'POST', ...init });
+
+test('router: every user route rejects a missing, malformed, or invalid token BEFORE running any handler', async () => {
+  for (const route of ['oauth-start', 'oauth-disconnect', 'gmail', 'calendar-import', 'sheets-preview', 'spotify-token']) {
+    const { ctx, calls } = mkCtx(() => undefined);
+    for (const headers of [{}, { authorization: 'Bearer ' }, { authorization: 'Bearer nope' }, { authorization: 'Basic abc' }] as Record<string, string>[]) {
+      const r = await handleRequest(req(route, { headers, body: '{}' }), ctx, verifier({ good: 'u1' }));
+      assert.equal(r.status, 401, `${route} with ${JSON.stringify(headers)}`);
+    }
+    assert.equal(calls.length, 0, `${route} must not reach any provider when unauthenticated`);
+  }
+});
+test('router: a valid token reaches the handler as THAT user, and a different token cannot act as them', async () => {
+  const { ctx, mem } = mkCtx((u) => (u.includes('oauth2') ? { body: { access_token: 'AT' } } : u.includes('/messages?') ? { body: { messages: [] } } : undefined));
+  await connect(mem, 'u1', 'gmail');
+  const ok = await handleRequest(req('gmail', { headers: { authorization: 'Bearer good' }, body: JSON.stringify({ action: 'list' }) }), ctx, verifier({ good: 'u1', other: 'u2' }));
+  assert.equal(ok.status, 200);
+  const other = await handleRequest(req('gmail', { headers: { authorization: 'Bearer other' }, body: JSON.stringify({ action: 'list' }) }), ctx, verifier({ good: 'u1', other: 'u2' }));
+  assert.equal(other.status, 409);                                    // u2 has no connection of their own
+});
+test('router: oauth-callback needs no JWT but is GET-only and funnels through one-time state', async () => {
+  const { ctx } = mkCtx(gmailRoutes());
+  const post = await handleRequest(req('oauth-callback'), ctx, verifier({}));
+  assert.equal(post.status, 405);
+  const state = new URL((await H.startOAuth('u1', { provider: 'gmail' }, ctx)).url).searchParams.get('state')!;
+  const ok = await handleRequest(new Request(`${BASE}/oauth-callback?code=c&state=${state}`), ctx, verifier({}));
+  assert.equal(ok.status, 302);
+  assert.match(ok.headers.get('location')!, /^https:\/\/app\.example\?.*result=connected/);
+  const replay = await handleRequest(new Request(`${BASE}/oauth-callback?code=c&state=${state}`), ctx, verifier({}));
+  assert.match(replay.headers.get('location')!, /integration_error/);
+  const forged = await handleRequest(new Request(`${BASE}/oauth-callback?code=c&state=forged`), ctx, verifier({}));
+  assert.match(forged.headers.get('location')!, /integration_error/);
+});
+test('router: health-ingest ignores Supabase JWTs and accepts only an ingest token', async () => {
+  const mem = memDb(); const { ctx } = mkCtx(() => undefined, mem);
+  const raw = 'cosmos_h_' + 'ef'.repeat(32);
+  mem.tokens.set(await sha256Hex(raw), { id: 't', userId: 'A' });
+  const jwt = await handleRequest(req('health-ingest', { headers: { authorization: 'Bearer good' }, body: '{}' }), ctx, verifier({ good: 'A' }));
+  assert.equal(jwt.status, 401);
+  const body = JSON.stringify({ workouts: [{ externalId: 'a', title: 'Run', date: '2026-10-19' }] });
+  const ok = await handleRequest(req('health-ingest', { headers: { authorization: `Bearer ${raw}` }, body }), ctx, verifier({}));
+  assert.equal(ok.status, 200);
+  assert.equal(((await ok.json()) as any).inserted, 1);
+});
+test('router: unknown routes 404, prototype-chain names do not resolve, wrong methods 405, OPTIONS gets CORS for the app origin only', async () => {
+  const { ctx } = mkCtx(() => undefined);
+  assert.equal((await handleRequest(req('nope'), ctx, verifier({}))).status, 404);
+  assert.equal((await handleRequest(req('constructor'), ctx, verifier({}))).status, 404);
+  assert.equal((await handleRequest(req('__proto__'), ctx, verifier({}))).status, 404);
+  assert.equal((await handleRequest(new Request(`${BASE}/gmail`, { method: 'GET' }), ctx, verifier({}))).status, 405);
+  const good = await handleRequest(new Request(`${BASE}/gmail`, { method: 'OPTIONS', headers: { origin: 'https://app.example' } }), ctx, verifier({}));
+  assert.equal(good.status, 204);
+  assert.equal(good.headers.get('access-control-allow-origin'), 'https://app.example');
+  const evil = await handleRequest(new Request(`${BASE}/gmail`, { method: 'OPTIONS', headers: { origin: 'https://evil.example' } }), ctx, verifier({}));
+  assert.notEqual(evil.headers.get('access-control-allow-origin'), 'https://evil.example');
+});
+test('router: handler errors never leak internals or tokens', async () => {
+  const { ctx } = mkCtx(() => undefined);
+  ctx.db.getConnection = async () => { throw new Error('connection string postgres://user:SECRET@host leaked?'); };
+  const r = await handleRequest(req('gmail', { headers: { authorization: 'Bearer good' }, body: JSON.stringify({ action: 'list' }) }), { ...ctx, env: ENV }, verifier({ good: 'u1' }));
+  const text = await r.text();
+  assert.equal(r.status, 500);
+  assert.ok(!text.includes('SECRET') && !text.includes('postgres://'));
+});
+
+
+// ---------- gmail: folders, scopes, attachments, modify, send ----------
+const GS = { read: 'https://www.googleapis.com/auth/gmail.readonly', modify: 'https://www.googleapis.com/auth/gmail.modify', send: 'https://www.googleapis.com/auth/gmail.send' };
+const gmailOk = (extra: Route = () => undefined): Route => (u, i) => (u.includes('oauth2') ? { body: { access_token: 'AT' } } : extra(u, i));
+
+test('gmail folders use real labels; spam/trash opt in to includeSpamTrash; All Mail has no label filter', async () => {
+  const want: Record<string, { labels: string[]; spamTrash: boolean }> = {
+    inbox: { labels: ['INBOX'], spamTrash: false }, all: { labels: [], spamTrash: false }, sent: { labels: ['SENT'], spamTrash: false },
+    drafts: { labels: ['DRAFT'], spamTrash: false }, starred: { labels: ['STARRED'], spamTrash: false },
+    spam: { labels: ['SPAM'], spamTrash: true }, trash: { labels: ['TRASH'], spamTrash: true },
+  };
+  for (const [folder, w] of Object.entries(want)) {
+    const { ctx, mem, calls } = mkCtx(gmailOk((u) => (u.includes('/messages?') ? { body: { messages: [] } } : undefined)));
+    await connect(mem, 'A', 'gmail');
+    await gmailAction('A', { action: 'list', folder, q: 'x' }, ctx);
+    const url = new URL(calls.find((c) => c.url.includes('/messages?'))!.url);
+    assert.deepEqual(url.searchParams.getAll('labelIds'), w.labels, folder);
+    assert.equal(url.searchParams.get('includeSpamTrash') === 'true', w.spamTrash, folder);
+    assert.equal(url.searchParams.get('q'), 'x');
+  }
+  const { ctx, mem } = mkCtx(gmailOk());
+  await connect(mem, 'A', 'gmail');
+  await fails(gmailAction('A', { action: 'list', folder: 'constructor' }, ctx), 400, 'bad_folder');
+  await fails(gmailAction('A', { action: 'list', folder: 'INBOX; DROP' }, ctx), 400, 'bad_folder');
+});
+test('gmail list never returns the same message twice, and reports starred/unread', async () => {
+  const meta = { id: 'aaaa1111bbbb2222', threadId: 't', snippet: 's', labelIds: ['STARRED'], payload: { headers: [] } };
+  const { ctx, mem, calls } = mkCtx(gmailOk((u) => (u.includes('/messages?') ? { body: { messages: [{ id: 'aaaa1111bbbb2222' }, { id: 'aaaa1111bbbb2222' }] } } : u.includes('/messages/aaaa') ? { body: meta } : undefined)));
+  await connect(mem, 'A', 'gmail');
+  const r: any = await gmailAction('A', { action: 'list', folder: 'all' }, ctx);
+  assert.equal(r.messages.length, 1);
+  assert.equal(r.messages[0].starred, true); assert.equal(r.messages[0].unread, false);
+  assert.equal(calls.filter((c) => c.url.includes('/messages/aaaa')).length, 1);
+});
+test('modify: needs the modify scope; only UNREAD/STARRED may change; read-only grants are refused before any Gmail write', async () => {
+  const { ctx, mem, calls } = mkCtx(gmailOk((u, i) => (u.includes('/modify') ? { body: { id: 'aaaa1111bbbb2222', labelIds: ['STARRED'] } } : undefined)));
+  await connect(mem, 'A', 'gmail', 'connected', 'RT', [GS.read]);
+  await fails(gmailAction('A', { action: 'modify', id: 'aaaa1111bbbb2222', addLabelIds: ['STARRED'] }, ctx), 403, 'scope_not_granted');
+  assert.equal(calls.some((c) => c.url.includes('/modify')), false);
+  await connect(mem, 'B', 'gmail', 'connected', 'RT', [GS.read, GS.modify]);
+  for (const bad of [['TRASH'], ['INBOX'], ['SPAM'], ['UNREAD', 'DELETE']]) await fails(gmailAction('B', { action: 'modify', id: 'aaaa1111bbbb2222', addLabelIds: bad }, ctx), 400, 'bad_labels');
+  await fails(gmailAction('B', { action: 'modify', id: 'aaaa1111bbbb2222' }, ctx), 400, 'bad_labels');
+  const ok: any = await gmailAction('B', { action: 'modify', id: 'aaaa1111bbbb2222', addLabelIds: ['STARRED'], removeLabelIds: ['UNREAD'] }, ctx);
+  assert.equal(ok.starred, true);
+  const sent = JSON.parse(String(calls.find((c) => c.url.includes('/modify'))!.init!.body));
+  assert.deepEqual(sent, { addLabelIds: ['STARRED'], removeLabelIds: ['UNREAD'] });
+  assert.equal((calls.find((c) => c.url.includes('/modify'))!.init as any).method, 'POST');
+});
+test('send: needs the send scope; validates recipients/subject; blocks header injection; builds correct MIME', async () => {
+  const { ctx, mem, calls } = mkCtx(gmailOk((u) => (u.includes('/messages/send') ? { body: { id: 'sent1', threadId: 'th1' } } : undefined)));
+  const msg = { action: 'send', to: 'a@example.com', subject: 'Hi', body: 'Hello' };
+  await connect(mem, 'A', 'gmail', 'connected', 'RT', [GS.read, GS.modify]);                     // modify alone does NOT enable sending in this app
+  await fails(gmailAction('A', msg, ctx), 403, 'scope_not_granted');
+  await connect(mem, 'B', 'gmail', 'connected', 'RT', [GS.read, GS.send]);
+  for (const bad of [{ to: '' }, { to: 'not-an-email' }, { to: 'a@example.com\r\nBcc: evil@x.com' }, { to: 'a@x.com, ,b' }, { subject: 'Hi\r\nBcc: evil@x.com' }, { subject: '' }, { body: '   ' }, { body: 'x'.repeat(100_001) }, { cc: 'bad' }])
+    await fails(gmailAction('B', { ...msg, ...bad }, ctx), 400, 'invalid_message');
+  assert.equal(calls.some((c) => c.url.includes('/messages/send')), false, 'nothing may reach Gmail for invalid input');
+  const r: any = await gmailAction('B', { ...msg, to: 'a@example.com, b@example.org', cc: ['c@example.com'], subject: 'Héllo wörld', body: 'Line1\nLine2 ünï', threadId: 'aaaa1111bbbb2222', inReplyTo: '<abc@mail.example>', references: '<x@y> <abc@mail.example>' }, ctx);
+  assert.deepEqual(r, { id: 'sent1', threadId: 'th1' });
+  const payload = JSON.parse(String(calls.find((c) => c.url.includes('/messages/send'))!.init!.body));
+  assert.equal(payload.threadId, 'aaaa1111bbbb2222');
+  const mime = Buffer.from(payload.raw, 'base64url').toString();
+  assert.match(mime, /^To: a@example.com, b@example.org\r\nCc: c@example.com\r\nSubject: =\?UTF-8\?B\?/);
+  assert.match(mime, /In-Reply-To: <abc@mail.example>\r\nReferences: <x@y> <abc@mail.example>/);
+  const [head, body] = mime.split('\r\n\r\n');
+  assert.match(head, /Content-Transfer-Encoding: base64/);
+  assert.equal(Buffer.from(body.replace(/\r\n/g, ''), 'base64').toString(), 'Line1\r\nLine2 ünï');
+  assert.equal((head.match(/^Bcc:/gim) ?? []).length, 0);
+  assert.equal(Buffer.from(/=\?UTF-8\?B\?(.+)\?=/.exec(head)![1], 'base64').toString(), 'Héllo wörld');
+});
+test('send: malformed reply headers are dropped rather than injected', () => {
+  const raw = Buffer.from(buildRawMessage({ to: ['a@example.com'], cc: [], subject: 'S', body: 'b' }), 'base64url').toString();
+  assert.ok(!/In-Reply-To|References/.test(raw));
+  assert.deepEqual(parseRecipients('a@example.com; b@example.com', 'To', true), ['a@example.com', 'b@example.com']);
+  assert.throws(() => parseRecipients(Array(21).fill('a@example.com'), 'To', true));
+});
+test('attachments: id validation, size cap, and the bytes come back untouched for the client to Blob-ify', async () => {
+  const { ctx, mem } = mkCtx(gmailOk((u) => (u.includes('/attachments/BIGBIGBIGBIG') ? { body: { size: 16 * 1024 * 1024, data: '' } } : u.includes('/attachments/') ? { body: { size: 3, data: 'AQID' } } : undefined)));
+  await connect(mem, 'A', 'gmail');
+  await fails(gmailAction('A', { action: 'attachment', id: 'aaaa1111bbbb2222', attachmentId: '../../x' }, ctx), 400, 'bad_id');
+  await fails(gmailAction('A', { action: 'attachment', id: '../x', attachmentId: 'ANGjdJ_abcdefghij' }, ctx), 400, 'bad_id');
+  await fails(gmailAction('A', { action: 'attachment', id: 'aaaa1111bbbb2222', attachmentId: 'BIGBIGBIGBIG' }, ctx), 413, 'too_large');
+  assert.deepEqual(await gmailAction('A', { action: 'attachment', id: 'aaaa1111bbbb2222', attachmentId: 'ANGjdJ_abcdefghij' }, ctx), { size: 3, data: 'AQID' });
+});
+test('oauth start: Gmail asks for read-only by default; modify/send only when requested; scopes accumulate; other providers refuse capabilities', async () => {
+  const scopes = async (body: any) => { const { ctx } = mkCtx(() => undefined); const u = new URL((await H.startOAuth('u1', body, ctx)).url); return { s: u.searchParams.get('scope')!.split(' '), inc: u.searchParams.get('include_granted_scopes') }; };
+  assert.deepEqual(await scopes({ provider: 'gmail' }), { s: [GS.read, 'email'], inc: 'false' });
+  assert.deepEqual(await scopes({ provider: 'gmail', capabilities: ['modify'] }), { s: [GS.read, 'email', GS.modify], inc: 'true' });
+  assert.deepEqual((await scopes({ provider: 'gmail', capabilities: ['send', 'modify', 'send'] })).s, [GS.read, 'email', GS.send, GS.modify]);
+  assert.deepEqual((await scopes({ provider: 'gmail', capabilities: ['delete-everything'] })).s, [GS.read, 'email']);
+  const { ctx } = mkCtx(() => undefined);
+  await fails(H.startOAuth('u1', { provider: 'spotify', capabilities: ['modify'] }, ctx), 400, 'bad_capabilities');
 });

@@ -30,7 +30,6 @@ export const FloatingMusicPlayer: React.FC = () => {
     nextMusicTrack,
     prevMusicTrack,
     openExternalMusicApp,
-    authorizeAppleMusic,
     setActiveModule,
   } = useApp();
 
@@ -68,8 +67,8 @@ export const FloatingMusicPlayer: React.FC = () => {
             {musicState.provider === 'ambient'
               ? 'Procedural Sound'
               : musicState.provider === 'spotify'
-              ? 'Spotify Connect'
-              : 'Apple MusicKit'}
+              ? 'Spotify remote'
+              : ''}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -111,16 +110,6 @@ export const FloatingMusicPlayer: React.FC = () => {
           }`}
         >
           Spotify
-        </button>
-        <button
-          onClick={() => switchMusicProvider('apple_music')}
-          className={`flex-1 rounded-md py-1.5 transition-colors ${
-            musicState.provider === 'apple_music'
-              ? 'bg-[#FFFFFF] dark:bg-[#292D27] text-[#FA243C] shadow-xs'
-              : 'text-[#6B7067] dark:text-[#A6AB9F] hover:text-[#252821]'
-          }`}
-        >
-          Apple Music
         </button>
       </div>
 
@@ -183,9 +172,7 @@ export const FloatingMusicPlayer: React.FC = () => {
                 <Trees className="h-5 w-5" />
               ) : musicState.provider === 'spotify' ? (
                 <span className="text-[#1DB954] text-xs font-mono font-bold tracking-wider">SPOT</span>
-              ) : (
-                <span className="text-[#FA243C] text-xs font-mono font-bold tracking-wider">APPLE</span>
-              )}
+              ) : null}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-bold text-[#252821] dark:text-[#ECEDE6]">
@@ -258,23 +245,16 @@ export const FloatingMusicPlayer: React.FC = () => {
                   {musicState.externalStatus === 'ok' ? (musicState.provider === 'spotify' ? `Spotify${musicState.spotifyActiveDevice ? ` · ${musicState.spotifyActiveDevice}` : ''}` : 'Apple Music') : (musicState.externalMessage ?? (musicState.externalStatus === 'unknown' ? 'Checking connection…' : 'Not connected'))}
                 </span>
               </div>
-              {musicState.provider === 'apple_music' && musicState.externalStatus === 'not_authorized' && (
-                <button onClick={() => void authorizeAppleMusic()} className="font-bold text-[#3D5240] dark:text-[#A8BDA1] hover:underline">Authorize</button>
-              )}
               {musicState.provider === 'spotify' && musicState.externalStatus === 'not_connected' && (
                 <button onClick={() => setActiveModule('settings')} className="font-bold text-[#3D5240] dark:text-[#A8BDA1] hover:underline">Connect in Settings</button>
               )}
               <a
-                href={
-                  musicState.provider === 'spotify'
-                    ? 'https://open.spotify.com'
-                    : 'https://music.apple.com'
-                }
+                href="https://open.spotify.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 font-bold text-[#3D5240] dark:text-[#A8BDA1] hover:underline"
               >
-                <span>Open {musicState.provider === 'spotify' ? 'Spotify' : 'Apple Music'}</span>
+                <span>Open Spotify</span>
                 <ExternalLink className="h-3 w-3" />
               </a>
             </div>

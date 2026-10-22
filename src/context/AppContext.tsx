@@ -25,7 +25,6 @@ import { useAuth } from './AuthContext';
 import { nextOccurrence } from '../lib/recurrence';
 import type { ImportedEvent } from '../lib/integrationsApi';
 import * as spotify from '../lib/spotifyPlayer';
-import * as apple from '../lib/appleMusic';
 import { supabase } from '../lib/supabase';
 import { ambientAudio } from '../lib/ambientAudio';
 import { musicRegistry } from '../lib/musicAdapters';
@@ -120,19 +119,10 @@ interface AppContextType {
   
   // Integrations & Diagnostics
   
-  // Gmail & WhatsApp Modals
-  isGmailOpen: boolean;
-  setGmailOpen: (open: boolean) => void;
-  gmailMessages: GmailMessage[];
-  sendGmailMessage: (to: string, subject: string, body: string) => void;
-  convertEmailToTask: (msgId: string) => void;
-  isWhatsAppOpen: boolean;
-  setWhatsAppOpen: (open: boolean) => void;
-  whatsAppPrefill: { phone: string; text: string };
-  openWhatsApp: (phone?: string, text?: string) => void;
   
   importCalendarEvents: (incoming: ImportedEvent[]) => { added: number; updated: number };
-  authorizeAppleMusic: () => Promise<void>;
+  musicWidgetRequest: number;
+  openMusicWidget: () => void;
   focusRecord: { kind: string; id: string } | null;
   setFocusRecord: (r: { kind: string; id: string } | null) => void;
   signOutUser: () => Promise<void>;
@@ -164,7 +154,7 @@ interface AppContextType {
   toggleMusicPlayback: () => void;
   setMusicVolume: (vol: number) => void;
   setMusicPreset: (preset: 'forest' | 'rain' | 'alpha' | 'celestial') => void;
-  switchMusicProvider: (provider: 'ambient' | 'spotify' | 'apple_music') => void;
+  switchMusicProvider: (provider: 'ambient' | 'spotify') => void;
   nextMusicTrack: () => void;
   prevMusicTrack: () => void;
   openExternalMusicApp: () => void;
@@ -186,7 +176,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const ROUTABLE: ModuleType[] = ['dashboard', 'notes', 'tables', 'expenses', 'fitness', 'goals', 'trackers', 'tasks', 'settings', 'admin'];
+const ROUTABLE: ModuleType[] = ['dashboard', 'notes', 'tables', 'expenses', 'fitness', 'goals', 'trackers', 'tasks', 'mail', 'whatsapp', 'settings', 'admin'];
 export const moduleFromPath = (pathname: string): ModuleType => {
   const seg = pathname.replace(/^\/+|\/+$/g, '').split('/')[0] as ModuleType;
   return ROUTABLE.includes(seg) ? seg : 'dashboard';
@@ -303,10 +293,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [quickCaptureTab, setQuickCaptureTab] = useState<'task' | 'note' | 'expense' | 'workout' | 'habit'>('task');
   
   // Gmail & WhatsApp
-  const [isGmailOpen, setGmailOpen] = useState(false);
-  const [gmailMessages] = useState<GmailMessage[]>([]); // populated only by a real Gmail API connection
-  const [isWhatsAppOpen, setWhatsAppOpen] = useState(false);
-  const [whatsAppPrefill, setWhatsAppPrefill] = useState({ phone: '', text: '' });
 
   // Music Player
   const [musicState, setMusicState] = useState<MusicPlayerState>(() => {
@@ -487,51 +473,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { status: 'error', message: err.message ?? 'Something went wrong.' };
   };
 
-  const refreshExternalPlayback = async (provider: 'spotify' | 'apple_music', quiet = false) => {
+  const refreshExternalPlayback = async (provider: 'spotify', quiet = false) => {
     try {
-      if (provider === 'spotify') {
-        const st = await spotify.getSpotifyState();
-        setMusicState((prev) => prev.provider !== 'spotify' ? prev : {
-          ...prev, isPlaying: st?.isPlaying ?? false, currentTrack: st?.track ?? 'Nothing playing',
-          artist: st ? st.artist : 'Open Spotify on a device to start', progressSeconds: st?.progressSec ?? 0, durationSeconds: st?.durationSec ?? 0,
-          spotifyActiveDevice: st?.device, externalStatus: 'ok', externalMessage: st ? undefined : 'No active device. Open Spotify and start playing.',
-        });
-      } else {
-        if (!(await apple.appleIsAuthorized())) {
-          setMusicState((prev) => prev.provider !== 'apple_music' ? prev : { ...prev, isPlaying: false, currentTrack: 'Apple Music: not authorized', artist: '', externalStatus: 'not_authorized', externalMessage: 'Authorize Apple Music to control playback.' });
-          return;
-        }
-        const st = await apple.appleState();
-        setMusicState((prev) => prev.provider !== 'apple_music' ? prev : { ...prev, isPlaying: st.isPlaying, currentTrack: st.track, artist: st.artist, externalStatus: 'ok', externalMessage: undefined });
-      }
+      const st = await spotify.getSpotifyState();
+      setMusicState((prev) => prev.provider !== 'spotify' ? prev : {
+        ...prev, isPlaying: st?.isPlaying ?? false, currentTrack: st?.track ?? 'Nothing playing',
+        artist: st ? st.artist : 'Open Spotify on a device to start', progressSeconds: st?.progressSec ?? 0, durationSeconds: st?.durationSec ?? 0,
+        spotifyActiveDevice: st?.device, externalStatus: 'ok', externalMessage: st ? undefined : 'No active device. Open Spotify and start playing.',
+      });
     } catch (e) {
       const x = explainExternalError(e);
-      setMusicState((prev) => prev.provider !== provider ? prev : { ...prev, isPlaying: false, currentTrack: `${provider === 'spotify' ? 'Spotify' : 'Apple Music'}: ${x.status === 'not_connected' ? 'not connected' : 'unavailable'}`, artist: '', externalStatus: x.status, externalMessage: x.message });
+      setMusicState((prev) => prev.provider !== provider ? prev : { ...prev, isPlaying: false, currentTrack: `Spotify: ${x.status === 'not_connected' ? 'not connected' : 'unavailable'}`, artist: '', externalStatus: x.status, externalMessage: x.message });
       if (!quiet) showToast(x.message, 'warning');
     }
   };
 
-  const authorizeAppleMusic = async () => {
-    try { await apple.appleAuthorize(); await refreshExternalPlayback('apple_music'); showToast('Apple Music authorized in this browser.', 'success'); }
-    catch (e) { showToast(explainExternalError(e).message, 'error'); }
-  };
+  // Apple Music is a separate floating widget (official embed). It exposes no playback API to us.
+  const [musicWidgetRequest, setMusicWidgetRequest] = useState(0);
+  const openMusicWidget = () => setMusicWidgetRequest((n) => n + 1);
 
   const externalCommand = async (cmd: 'toggle' | 'next' | 'prev') => {
-    const provider = musicState.provider as 'spotify' | 'apple_music';
     try {
-      if (provider === 'spotify') {
-        if (cmd === 'toggle') await (musicState.isPlaying ? spotify.spotifyPause() : spotify.spotifyPlay());
-        else if (cmd === 'next') await spotify.spotifyNext(); else await spotify.spotifyPrevious();
-        await new Promise((r) => setTimeout(r, 400));          // Spotify state lags the command slightly
-      } else {
-        if (cmd === 'toggle') await (musicState.isPlaying ? apple.applePause() : apple.applePlay());
-        else if (cmd === 'next') await apple.appleNext(); else await apple.applePrevious();
-      }
-      await refreshExternalPlayback(provider, true);
+      if (cmd === 'toggle') await (musicState.isPlaying ? spotify.spotifyPause() : spotify.spotifyPlay());
+      else if (cmd === 'next') await spotify.spotifyNext(); else await spotify.spotifyPrevious();
+      await new Promise((r) => setTimeout(r, 400));          // Spotify state lags the command slightly
+      await refreshExternalPlayback('spotify', true);
     } catch (e) {
-      const x = explainExternalError(e);
-      showToast(x.message, 'warning');
-      await refreshExternalPlayback(provider, true);
+      showToast(explainExternalError(e).message, 'warning');
+      await refreshExternalPlayback('spotify', true);
     }
   };
 
@@ -545,7 +514,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const switchMusicProvider = (provider: 'ambient' | 'spotify' | 'apple_music') => {
+  const switchMusicProvider = (provider: 'ambient' | 'spotify') => {
     musicRegistry.setActiveProvider(provider);
     if (provider === 'ambient') {
       const playback = musicRegistry.getCurrentPlaybackState(musicState.ambientPreset || 'forest');
@@ -607,21 +576,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const openQuickCapture = (tab: 'task' | 'note' | 'expense' | 'workout' | 'habit' = 'task') => {
     setQuickCaptureTab(tab);
     setQuickCaptureOpen(true);
-  };
-
-  // WhatsApp Helper
-  const openWhatsApp = (phone: string = '', text: string = '') => {
-    setWhatsAppPrefill({ phone, text });
-    setWhatsAppOpen(true);
-  };
-
-  // Gmail: no messages exist until a real Gmail API connection is made.
-  const sendGmailMessage = (_to: string, _subject: string, _snippet: string) => {
-    showToast('Gmail is not connected. Nothing was sent.', 'error');
-  };
-
-  const convertEmailToTask = (_msgId: string) => {
-    showToast('Gmail is not connected.', 'error');
   };
 
   // Task Handlers
@@ -1165,17 +1119,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addTrackerEntry,
         addCustomTracker,
         deleteCustomTracker,
-        isGmailOpen,
-        setGmailOpen,
-        gmailMessages,
-        sendGmailMessage,
-        convertEmailToTask,
-        isWhatsAppOpen,
-        setWhatsAppOpen,
-        whatsAppPrefill,
-        openWhatsApp,
         importCalendarEvents,
-        authorizeAppleMusic,
+        musicWidgetRequest,
+        openMusicWidget,
         focusRecord,
         setFocusRecord,
         loadState,

@@ -21,6 +21,6 @@ export const INTEGRATION_CATALOG: IntegrationAccount[] = [
     status: 'not_connected', permissions: ['None (opens wa.me)'], syncDirection: 'None' },
   { id: 'spotify', name: 'Spotify', description: 'Remote-control playback on a device where Spotify is already open. Requires Spotify Premium. Cosmos OS does not stream audio itself.',
     status: 'not_connected', permissions: ['user-read-playback-state', 'user-modify-playback-state'], syncDirection: 'Remote control' },
-  { id: 'apple_music', name: 'Apple Music', description: 'Authorize Apple Music in the mini-player (MusicKit). Requires an Apple Music subscription and server-side developer credentials.',
-    status: 'not_connected', permissions: ['MusicKit user authorization (per browser)'], syncDirection: 'Playback' },
+  { id: 'apple_music', name: 'Apple Music', description: 'Paste a playlist or album link to play it in a floating widget using Apple’s official embedded player. No account connection or developer membership is needed here; Apple handles sign-in and subscription inside its player.',
+    status: 'not_connected', permissions: ['None (Apple’s embed handles its own sign-in)'], syncDirection: 'None' },
 ];
