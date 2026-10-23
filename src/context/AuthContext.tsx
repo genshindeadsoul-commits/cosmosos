@@ -36,6 +36,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState<string | null>(() => readCallbackError());
+  // Did we land here carrying a sign-in code? (Read once at mount, before the client finishes exchanging it.)
+  const [cameBackWithCode] = useState(() => /[?&]code=/.test(window.location.search));
 
   // The ONE auth observer in the app. Effect cleanup unsubscribes, so StrictMode/HMR can't double-register.
   useEffect(() => {
@@ -44,6 +46,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
       if (error) setAuthError(error.message);
+      else if (cameBackWithCode && !data.session) {
+        // Google finished but no session was created. The browser keeps its sign-in proof per web address, so this
+        // happens when sign-in started on one address and Supabase sent the user back to another.
+        setAuthError(`Google sign-in finished, but this page couldn’t complete it. Sign-in has to finish on the same web address it started from, and you’re on ${window.location.host}. Open the app at its main address, or add this address to Supabase → Authentication → URL Configuration → Redirect URLs, then try again.`);
+        window.history.replaceState({}, document.title, window.location.pathname);   // a reload must not retry a spent code
+      }
       setSession(data.session);
       setLoading(false);
     });

@@ -29,9 +29,18 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
     return <Shell><p role="status" className="mt-3 text-sm text-[#6B7067] dark:text-[#A6AB9F]">Restoring session…</p></Shell>;
   }
   if (!user) {
+    // Optional: the app's main address. A per-deployment preview URL can't complete Google sign-in.
+    const main = (import.meta.env.VITE_APP_ORIGIN ?? '').replace(/\/$/, '');
+    const offMain = main && main !== window.location.origin;
     return (
       <Shell>
         <p className="mb-6 text-sm text-[#6B7067] dark:text-[#A6AB9F]">Sign in to open your workspace.</p>
+        {offMain && (
+          <div role="note" className="mb-4 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+            You’re on a temporary address. Sign-in only works at the main address:{' '}
+            <a className="font-semibold underline" href={main}>{main.replace(/^https?:\/\//, '')}</a>
+          </div>
+        )}
         {authError && (
           <div role="alert" className="mb-4 rounded-md border border-rose-300 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-sm text-rose-800 dark:text-rose-300">
             {authError}

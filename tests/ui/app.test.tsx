@@ -14,6 +14,25 @@ const NAV = ['Dashboard', 'Notes', 'Tables', 'Expenses', 'Fitness', 'Goals & Hab
 beforeEach(() => { Object.defineProperty(window, 'location', REAL_LOCATION); fake.failWrites.on = false; window.history.replaceState({}, '', '/'); fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
 
 describe('auth gate', () => {
+  it('returning from Google with a code but no session explains the address mismatch instead of silently showing login', async () => {
+    fake.setUser(null);
+    window.history.replaceState({}, '', '/?code=spent-code-123');
+    const replace = vi.spyOn(window.history, 'replaceState');
+    render(<App />);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/couldn’t complete it/);
+    expect(alert.textContent).toContain(window.location.host);
+    expect(alert.textContent).toMatch(/Redirect URLs/);
+    expect(replace).toHaveBeenCalled();                                   // spent code removed from the URL
+    expect(window.location.search).toBe('');
+    expect(screen.getByText('Continue with Google')).toBeTruthy();         // can retry
+  });
+  it('a normal visit (no code) shows no sign-in error', async () => {
+    fake.setUser(null);
+    render(<App />);
+    await screen.findByText('Continue with Google');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
   it('Google provider disabled in Supabase => readable setup message, and no redirect to the raw JSON error', async () => {
     fake.setUser(null); fake.oauthCalls.length = 0;
     const f = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ external: { google: false, email: true } }), { status: 200 }));
