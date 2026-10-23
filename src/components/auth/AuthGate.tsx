@@ -12,7 +12,7 @@ const Shell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 /** Renders children only for a verified session. Private modules never mount before this passes. */
 export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { configured, loading, user, authError, signInWithGoogle, clearAuthError } = useAuth();
+  const { configured, loading, user, authError, signInWithGoogle, signingIn, clearAuthError } = useAuth();
 
   if (!configured) {
     return (
@@ -48,9 +48,10 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
         )}
         <button
           onClick={() => { clearAuthError(); void signInWithGoogle(); }}
-          className="w-full rounded-md bg-[#526B55] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#405541] focus:outline-none focus:ring-2 focus:ring-[#526B55] focus:ring-offset-2"
+          disabled={signingIn}
+          className="w-full rounded-md bg-[#526B55] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#405541] focus:outline-none focus:ring-2 focus:ring-[#526B55] focus:ring-offset-2 disabled:opacity-60"
         >
-          Continue with Google
+          {signingIn ? 'Opening Google…' : 'Continue with Google'}
         </button>
         <p className="mt-4 text-xs text-[#6B7067] dark:text-[#A6AB9F]">
           Signing in only identifies you. Gmail, Calendar, and other services ask for their own permission later.

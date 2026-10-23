@@ -5,6 +5,7 @@ export const fnCalls: { name: string; body: any }[] = [];
 export const fnHandlers: Record<string, (body: any) => unknown> = {};
 export const failWrites = { on: false };
 export const oauthCalls: unknown[] = [];
+export const exchange: { result: 'fail' | 'ok'; message: string } = { result: 'fail', message: 'PKCE code verifier not found in storage.' };
 export const calls: { op: string; table: string; n?: number }[] = [];
 let currentUser: any = null;
 const listeners = new Set<(e: string, s: any) => void>();
@@ -62,7 +63,10 @@ export const fakeClient = {
   auth: {
     getSession: async () => ({ data: { session: session() }, error: null }),
     onAuthStateChange: (cb: any) => { listeners.add(cb); return { data: { subscription: { unsubscribe: () => listeners.delete(cb) } } }; },
-    signInWithOAuth: async (o: unknown) => { oauthCalls.push(o); return { error: null }; },
+    signInWithOAuth: async (o: unknown) => { oauthCalls.push(o); await new Promise((r) => setTimeout(r, 30)); return { error: null }; },
+    exchangeCodeForSession: async (_code: string) => exchange.result === 'ok'
+      ? (setUser({ id: 'u1', email: 'alice@x.dev' }), { data: { session: session() }, error: null })
+      : { data: { session: null }, error: { message: exchange.message } },
     signOut: async () => { currentUser = null; emit('SIGNED_OUT'); return { error: null }; },
   },
   __listenerCount: () => listeners.size,

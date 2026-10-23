@@ -11,7 +11,7 @@ import App from '../../src/App';
 const REAL_LOCATION = Object.getOwnPropertyDescriptor(window, 'location')!;
 const NAV = ['Dashboard', 'Notes', 'Tables', 'Expenses', 'Fitness', 'Goals & Habits', 'Custom Trackers', 'Tasks & Calendar', 'Settings'];
 
-beforeEach(() => { Object.defineProperty(window, 'location', REAL_LOCATION); fake.failWrites.on = false; window.history.replaceState({}, '', '/'); fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
+beforeEach(() => { fake.exchange.result = 'fail'; fake.exchange.message = 'PKCE code verifier not found in storage.'; Object.defineProperty(window, 'location', REAL_LOCATION); fake.failWrites.on = false; window.history.replaceState({}, '', '/'); fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
 
 describe('auth gate', () => {
   it('returning from Google with a code but no session explains the address mismatch instead of silently showing login', async () => {
@@ -26,6 +26,38 @@ describe('auth gate', () => {
     expect(replace).toHaveBeenCalled();                                   // spent code removed from the URL
     expect(window.location.search).toBe('');
     expect(screen.getByText('Continue with Google')).toBeTruthy();         // can retry
+  });
+  it('shows the REAL reason the code exchange failed, and notes when no sign-in secret is stored', async () => {
+    fake.setUser(null); localStorage.clear();
+    fake.exchange.message = 'code challenge does not match previously saved code verifier';
+    window.history.replaceState({}, '', '/?code=abc');
+    render(<App />);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('code challenge does not match previously saved code verifier');
+    expect(alert.textContent).toMatch(/no saved sign-in secret for this address/);
+    expect(alert.textContent).not.toContain('abc');                                     // the code itself is never shown
+  });
+  it('if the explicit exchange succeeds, you are signed in with no error and the code is removed from the URL', async () => {
+    fake.setUser(null); fake.exchange.result = 'ok';
+    window.history.replaceState({}, '', '/?code=abc');
+    render(<App />);
+    await screen.findAllByText('Dashboard');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(window.location.search).toBe('');
+  });
+  it('double-clicking Continue with Google starts exactly one sign-in', async () => {
+    fake.setUser(null); fake.oauthCalls.length = 0;
+    const f = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ external: { google: true } }), { status: 200 }));
+    const user = userEvent.setup();
+    render(<App />);
+    const btn = await screen.findByText('Continue with Google');
+    await user.dblClick(btn);
+    await user.click(btn);
+    await waitFor(() => expect(fake.oauthCalls).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(fake.oauthCalls).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Opening Google…' }).hasAttribute('disabled')).toBe(true);
+    f.mockRestore();
   });
   it('a normal visit (no code) shows no sign-in error', async () => {
     fake.setUser(null);

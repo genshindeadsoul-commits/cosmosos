@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 
@@ -10,6 +10,7 @@ interface AuthContextType {
   isAdmin: boolean;
   authError: string | null;
   signInWithGoogle: () => Promise<void>;
+  signingIn: boolean;
   signOut: () => Promise<void>;
   clearAuthError: () => void;
 }
@@ -43,13 +44,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (!supabase) return;
     let active = true;
-    supabase.auth.getSession().then(({ data, error }) => {
+    supabase.auth.getSession().then(async ({ data, error }) => {
       if (!active) return;
-      if (error) setAuthError(error.message);
-      else if (cameBackWithCode && !data.session) {
-        // Google finished but no session was created. The browser keeps its sign-in proof per web address, so this
-        // happens when sign-in started on one address and Supabase sent the user back to another.
-        setAuthError(`Google sign-in finished, but this page couldn’t complete it. Sign-in has to finish on the same web address it started from, and you’re on ${window.location.host}. Open the app at its main address, or add this address to Supabase → Authentication → URL Configuration → Redirect URLs, then try again.`);
+      if (error) { setAuthError(error.message); setSession(data.session); setLoading(false); return; }
+      if (cameBackWithCode && !data.session) {
+        // The library exchanges the ?code= automatically but stays silent when it can't (e.g. its stored sign-in secret
+        // is missing). Try once explicitly so we can report the real reason instead of just showing the login screen.
+        const code = new URLSearchParams(window.location.search).get('code') ?? '';
+        const hasSecret = Object.keys(localStorage).some((k) => k.endsWith('-code-verifier'));
+        let reason = '';
+        if (code) {
+          const r = await supabase!.auth.exchangeCodeForSession(code);
+          if (!active) return;
+          if (r.data?.session) { window.history.replaceState({}, document.title, window.location.pathname); setSession(r.data.session); setLoading(false); return; }
+          reason = r.error?.message ?? '';
+        }
+        setAuthError(`Google sign-in finished, but this page couldn’t complete it${reason ? ` (${reason.slice(0, 160)})` : ''}. ${hasSecret ? '' : 'This browser has no saved sign-in secret for this address. '}Sign-in has to finish on the same web address it started from, and you’re on ${window.location.host}. Open the app at its main address, or add this address to Supabase → Authentication → URL Configuration → Redirect URLs, then try again (click once and wait).`);
         window.history.replaceState({}, document.title, window.location.pathname);   // a reload must not retry a spent code
       }
       setSession(data.session);
@@ -74,8 +84,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => { active = false; };
   }, [userId]);
 
+  const signingInRef = useRef(false);
+  const [signingIn, setSigningIn] = useState(false);
   const signInWithGoogle = useCallback(async () => {
     if (!supabase) { setAuthError('Supabase is not configured.'); return; }
+    // One sign-in at a time: a second start would overwrite the first one's stored secret and the return trip would fail.
+    if (signingInRef.current) return;
+    signingInRef.current = true; setSigningIn(true);
+    const stop = () => { signingInRef.current = false; setSigningIn(false); };
     setAuthError(null);
     // Pre-flight: if the provider is disabled, Supabase answers the redirect with a raw JSON error page.
     // Its public settings endpoint tells us first, so we can show a readable message instead.
@@ -85,7 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const settings = await res.json();
         if (settings?.external && settings.external.google === false) {
           setAuthError('Google sign-in is not enabled for this Supabase project. In Supabase go to Authentication → Sign In / Providers → Google, turn it on, and paste your Google Client ID and Secret (docs/SETUP.md, section 2).');
-          return;
+          stop(); return;
         }
       }
     } catch { /* offline or blocked: fall through and let the normal flow report the problem */ }
@@ -93,7 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       provider: 'google',
       options: { redirectTo: window.location.origin },  // identity only; Gmail etc. need separate consent
     });
-    if (error) setAuthError(error.message);
+    if (error) { setAuthError(error.message); stop(); }      // on success the page navigates away
   }, []);
 
   const signOut = useCallback(async () => {
@@ -107,7 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider value={{
       configured: isSupabaseConfigured, loading, session, user: session?.user ?? null, isAdmin, authError,
-      signInWithGoogle, signOut, clearAuthError: () => setAuthError(null),
+      signInWithGoogle, signingIn, signOut, clearAuthError: () => setAuthError(null),
     }}>
       {children}
     </AuthContext.Provider>
