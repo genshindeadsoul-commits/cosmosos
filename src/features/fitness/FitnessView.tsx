@@ -10,16 +10,18 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { dayKey, daysInMonth, leadingBlanks, monthLabel, todayKey } from '../../lib/dates';
 
 export const FitnessView: React.FC = () => {
   const { workouts, addWorkout, deleteWorkout } = useApp();
 
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
-  const [selectedCalendarDay, setSelectedCalendarDay] = useState(21);
+  const [view, setView] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState(new Date().getDate());
 
   // Form states
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState('2026-10-18');
+  const [date, setDate] = useState(todayKey());
   const [duration, setDuration] = useState('50');
   const [calories, setCalories] = useState('450');
   const [exerciseList, setExerciseList] = useState([
@@ -48,10 +50,7 @@ export const FitnessView: React.FC = () => {
   };
 
   // Workout dates map for calendar
-  const workoutDates = workouts.map((w) => {
-    const day = parseInt(w.date.split('-')[2]);
-    return isNaN(day) ? null : day;
-  }).filter(Boolean);
+  const workoutDays = new Set(workouts.map((w) => w.date));
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-12">
@@ -86,7 +85,7 @@ export const FitnessView: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#8A8E85]">October 2026</span>
+            <span className="text-xs font-bold text-[#8A8E85]">{monthLabel(view.y, view.m)}</span>
             <div className="flex items-center">
               <button
                 aria-label="Previous month"
@@ -117,15 +116,13 @@ export const FitnessView: React.FC = () => {
 
         {/* Calendar Grid matching Screenshot 2 */}
         <div className="grid grid-cols-7 gap-2 text-center text-xs">
-          {/* First row starts on Thursday Oct 1 (Sun=4 empty/prev slots) */}
-          <div className="h-14 sm:h-16 rounded-xl border border-dashed border-[#DFE1D9]/40 dark:border-[#383D35]/40" />
-          <div className="h-14 sm:h-16 rounded-xl border border-dashed border-[#DFE1D9]/40 dark:border-[#383D35]/40" />
-          <div className="h-14 sm:h-16 rounded-xl border border-dashed border-[#DFE1D9]/40 dark:border-[#383D35]/40" />
-          <div className="h-14 sm:h-16 rounded-xl border border-dashed border-[#DFE1D9]/40 dark:border-[#383D35]/40" />
+          {Array.from({ length: leadingBlanks(view.y, view.m, 0) }, (_, i) => (
+            <div key={`b${i}`} className="h-14 sm:h-16 rounded-xl border border-dashed border-[#DFE1D9]/40 dark:border-[#383D35]/40" />
+          ))}
 
-          {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
-            const hasWorkout = (workoutDates as number[]).includes(day) || [12, 14, 16, 21].includes(day);
-            const isToday = day === 21;
+          {Array.from({ length: daysInMonth(view.y, view.m) }, (_, i) => i + 1).map((day) => {
+            const hasWorkout = workoutDays.has(dayKey(view.y, view.m, day));
+            const isToday = dayKey(view.y, view.m, day) === todayKey();
             const isSelected = day === selectedCalendarDay;
 
             return (

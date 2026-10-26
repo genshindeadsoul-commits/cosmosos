@@ -4,6 +4,7 @@ import { encryptJson, decryptJson, sha256Hex } from '../supabase/functions/api/_
 import * as H from '../supabase/functions/api/_shared/handlers.ts';
 import { extractBody, normalizeGoogleEvent, validateHealthPayload } from '../supabase/functions/api/_shared/parse.ts';
 import { gmailAction, buildRawMessage, parseRecipients } from '../supabase/functions/api/_shared/gmailApi.ts';
+import { driveAction, FOLDER_NAME } from '../supabase/functions/api/_shared/driveApi.ts';
 import { HttpError, type Ctx, type DbPort, type ConnPatch } from '../supabase/functions/api/_shared/ports.ts';
 
 const KEY = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64');
@@ -412,4 +413,156 @@ test('oauth start: Gmail asks for read-only by default; modify/send only when re
   assert.deepEqual((await scopes({ provider: 'gmail', capabilities: ['delete-everything'] })).s, [GS.read, 'email']);
   const { ctx } = mkCtx(() => undefined);
   await fails(H.startOAuth('u1', { provider: 'spotify', capabilities: ['modify'] }, ctx), 400, 'bad_capabilities');
+});
+
+
+// ---------- Google Drive backups ----------
+const GD_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const backupJson = (extra: any = {}) => JSON.stringify({ app: 'cosmos-os', formatVersion: 3, createdAt: '2026-10-23T09:00:00Z', data: { notes: [{ id: 'a' }, { id: 'b' }], tasks: [{ id: 'c' }] }, ...extra });
+interface DriveSim { folder?: string | null; files: Record<string, any>; contents: Record<string, string>; deleted: string[]; uploads: number; readBack?: (id: string, original: string) => string }
+const driveSim = (init: Partial<DriveSim> = {}): { sim: DriveSim; route: Route } => {
+  const sim: DriveSim = { folder: 'FOLDERID1234567', files: {}, contents: {}, deleted: [], uploads: 0, ...init };
+  const route: Route = (u, i) => {
+    const method = (i?.method ?? 'GET').toUpperCase();
+    if (u.includes('oauth2')) return { body: { access_token: 'AT' } };
+    if (u.includes('/upload/drive/v3/files') && method === 'POST') {
+      sim.uploads++;
+      const raw = String(i!.body); const metaStart = raw.indexOf('{'), metaEnd = raw.indexOf('\r\n--', metaStart);
+      const meta = JSON.parse(raw.slice(metaStart, metaEnd));
+      const content = raw.slice(raw.indexOf('Content-Type: application/json\r\n\r\n', metaEnd) + 'Content-Type: application/json\r\n\r\n'.length, raw.lastIndexOf('\r\n--'));
+      const id = `NEWFILE${sim.uploads}1234567`;
+      sim.files[id] = { id, name: meta.name, parents: meta.parents, appProperties: meta.appProperties, size: String(content.length), createdTime: '2026-10-23T09:00:01Z' };
+      sim.contents[id] = content;
+      return { body: { id, name: meta.name, size: String(content.length), createdTime: '2026-10-23T09:00:01Z' } };
+    }
+    if (u.includes('/drive/v3/files') && method === 'POST') { sim.folder = 'FOLDERID1234567'; return { body: { id: sim.folder } }; }
+    if (u.includes('/drive/v3/files/') && method === 'DELETE') { sim.deleted.push(u.split('/files/')[1]); return { status: 204, body: {} }; }
+    const m = u.match(/\/drive\/v3\/files\/([A-Za-z0-9_-]+)\?(.*)/);
+    if (m && method === 'GET') {
+      const f = sim.files[m[1]];
+      if (!f) return { status: 404, body: {} };
+      if (m[2].includes('alt=media')) return { body: sim.readBack ? sim.readBack(m[1], sim.contents[m[1]]) : sim.contents[m[1]] as any, __text: true } as any;
+      return { body: f };
+    }
+    if (u.includes('/drive/v3/files?')) {
+      const q = new URL(u).searchParams.get('q')!;
+      if (q.includes('application/vnd.google-apps.folder')) return { body: { files: sim.folder ? [{ id: sim.folder, name: FOLDER_NAME }] : [] } };
+      return { body: { files: Object.values(sim.files).filter((f: any) => f.parents.includes(sim.folder) && f.appProperties?.cosmosBackup === '1') } };
+    }
+  };
+  return { sim, route };
+};
+// Answers each request exactly once. Drive media downloads are plain text; everything else is JSON.
+const driveCtx = (r: ReturnType<typeof driveSim>, mem = memDb()) => {
+  const base = mkCtx(() => undefined, mem);
+  base.ctx.fetch = (async (url: any, init?: RequestInit) => {
+    const u = String(url); base.calls.push({ url: u, init });
+    const res = (r.route(u, init) ?? { status: 404, body: {} }) as any;
+    if (res.__text) return new Response(String(res.body), { status: 200 });
+    return new Response(res.status === 204 ? null : JSON.stringify(res.body), { status: res.status ?? 200 });
+  }) as typeof fetch;
+  return base;
+};
+const connectDrive = (mem: ReturnType<typeof memDb>, user = 'A') => connect(mem, user, 'google_drive', 'connected', 'RT', [GD_SCOPE, 'email']);
+
+test('drive: oauth asks for the narrow drive.file scope only (plus email), never full Drive', async () => {
+  const { ctx } = mkCtx(() => undefined);
+  const u = new URL((await H.startOAuth('u1', { provider: 'google_drive' }, ctx)).url);
+  assert.deepEqual(u.searchParams.get('scope')!.split(' '), [GD_SCOPE, 'email']);
+  assert.ok(!u.searchParams.get('scope')!.includes('/auth/drive ') && !u.searchParams.get('scope')!.endsWith('/auth/drive'));
+  assert.equal(u.searchParams.get('access_type'), 'offline');
+});
+test('drive create: makes the visible folder once, uploads a NEW timestamped file, verifies it, records the success time', async () => {
+  const r = driveSim({ folder: null }); const mem = memDb(); const { ctx, calls } = driveCtx(r, mem);
+  await connectDrive(mem);
+  const res: any = await driveAction('A', { action: 'create', content: backupJson() }, ctx);
+  assert.match(res.name, /^cosmos-os-backup-\d{4}-\d\d-\d\d_\d\d-\d\dZ?-?\d*Z?\.json$|^cosmos-os-backup-2026-10-20_12-00-00Z\.json$/);
+  assert.equal(res.records, 3);
+  assert.equal(r.sim.uploads, 1);
+  assert.deepEqual(r.sim.files[res.id].parents, ['FOLDERID1234567']);
+  assert.deepEqual(r.sim.files[res.id].appProperties, { cosmosBackup: '1', formatVersion: '3', records: '3' });
+  assert.equal(r.sim.contents[res.id], backupJson());                                       // stored byte-for-byte
+  assert.equal(calls.filter((c) => (c.init?.method ?? 'GET') === 'DELETE').length, 0);
+  assert.equal(calls.filter((c) => c.url.includes('/drive/v3/files') && (c.init?.method === 'POST') && !c.url.includes('upload')).length, 1);   // folder created once
+  assert.equal(mem.conns.get('A|google_drive').last_synced_at, '2026-10-20T12:00:00.000Z');
+  assert.equal(mem.conns.get('A|google_drive').last_error, null);
+});
+test('drive create: two backups never collide or overwrite; the folder is reused', async () => {
+  const r = driveSim(); const mem = memDb(); const { ctx } = driveCtx(r, mem);
+  await connectDrive(mem);
+  const a: any = await driveAction('A', { action: 'create', content: backupJson() }, ctx);
+  ctx.now = () => new Date('2026-10-20T12:00:05Z');
+  const b: any = await driveAction('A', { action: 'create', content: backupJson({ createdAt: 'later' }) }, ctx);
+  assert.notEqual(a.id, b.id); assert.notEqual(a.name, b.name);
+  assert.equal(Object.keys(r.sim.files).length, 2);
+  assert.equal(r.sim.contents[a.id], backupJson());                                          // first backup untouched
+});
+test('drive create: an incomplete/corrupted upload is deleted and reported; earlier backups and the connection stay valid', async () => {
+  const mem = memDb();
+  const r = driveSim({ readBack: (_id, original) => original.slice(0, original.length - 20) });   // Drive returns a truncated copy
+  const { ctx } = driveCtx(r, mem);
+  await connectDrive(mem);
+  r.sim.files['OLDBACKUP1234567'] = { id: 'OLDBACKUP1234567', name: 'cosmos-os-backup-old.json', parents: ['FOLDERID1234567'], appProperties: { cosmosBackup: '1' } };
+  r.sim.contents['OLDBACKUP1234567'] = backupJson({ createdAt: 'old' });
+  await fails(driveAction('A', { action: 'create', content: backupJson() }, ctx), 502, 'backup_verify_failed');
+  assert.deepEqual(r.sim.deleted, ['NEWFILE11234567']);                                      // only the bad new file removed
+  assert.ok(r.sim.files['OLDBACKUP1234567'] && r.sim.contents['OLDBACKUP1234567'] === backupJson({ createdAt: 'old' }));
+  const c = mem.conns.get('A|google_drive');
+  assert.equal(c.status, 'connected'); assert.equal(c.last_synced_at, undefined);            // no false "success"
+  assert.match(c.last_error, /Last backup attempt failed/);
+});
+test('drive create: invalid, foreign, newer-format, or oversized files are refused BEFORE touching Drive', async () => {
+  const r = driveSim(); const mem = memDb(); const { ctx, calls } = driveCtx(r, mem);
+  await connectDrive(mem);
+  const before = calls.length;
+  await fails(driveAction('A', { action: 'create', content: 'not json' }, ctx), 400, 'invalid_backup');
+  await fails(driveAction('A', { action: 'create', content: JSON.stringify({ hello: 1 }) }, ctx), 400, 'invalid_backup');
+  await fails(driveAction('A', { action: 'create', content: backupJson({ app: 'other' }) }, ctx), 400, 'invalid_backup');
+  await fails(driveAction('A', { action: 'create', content: backupJson({ formatVersion: 99 }) }, ctx), 400, 'invalid_backup');
+  await fails(driveAction('A', { action: 'create', content: '' }, ctx), 400, 'invalid_backup');
+  await fails(driveAction('A', { action: 'create', content: backupJson({ pad: 'x'.repeat(10 * 1024 * 1024) }) }, ctx), 413, 'too_large');
+  assert.equal(r.sim.uploads, 0);
+  assert.equal(calls.slice(before).filter((c) => c.url.includes('/drive/v3') || c.url.includes('/upload/')).length, 0);
+});
+test('drive: list returns only Cosmos backups from the Cosmos folder; empty when no folder exists', async () => {
+  const r = driveSim(); const mem = memDb(); const { ctx } = driveCtx(r, mem);
+  await connectDrive(mem);
+  r.sim.files['F1AAAAAAAAAA'] = { id: 'F1AAAAAAAAAA', name: 'b1.json', parents: ['FOLDERID1234567'], size: '10', createdTime: 't1', appProperties: { cosmosBackup: '1', records: '7', formatVersion: '3' } };
+  r.sim.files['F2AAAAAAAAAA'] = { id: 'F2AAAAAAAAAA', name: 'unrelated.json', parents: ['FOLDERID1234567'], size: '10', createdTime: 't2', appProperties: {} };
+  r.sim.files['F3AAAAAAAAAA'] = { id: 'F3AAAAAAAAAA', name: 'elsewhere.json', parents: ['OTHERFOLDER12345'], size: '10', createdTime: 't3', appProperties: { cosmosBackup: '1' } };
+  const l: any = await driveAction('A', { action: 'list' }, ctx);
+  assert.deepEqual(l.backups, [{ id: 'F1AAAAAAAAAA', name: 'b1.json', size: 10, createdTime: 't1', records: 7, formatVersion: 3 }]);
+  const none = driveCtx(driveSim({ folder: null }), mem);
+  assert.deepEqual(await driveAction('A', { action: 'list' }, none.ctx), { backups: [] });
+});
+test('drive get: only a real Cosmos backup inside the Cosmos folder can be read; ids are validated', async () => {
+  const r = driveSim(); const mem = memDb(); const { ctx } = driveCtx(r, mem);
+  await connectDrive(mem);
+  const body = backupJson();
+  r.sim.files['GOODFILE123456'] = { id: 'GOODFILE123456', name: 'good.json', parents: ['FOLDERID1234567'], size: String(body.length), appProperties: { cosmosBackup: '1' } }; r.sim.contents['GOODFILE123456'] = body;
+  r.sim.files['STRANGER123456'] = { id: 'STRANGER123456', name: 'x.json', parents: ['FOLDERID1234567'], size: '5', appProperties: {} }; r.sim.contents['STRANGER123456'] = 'secret';
+  r.sim.files['ELSEWHERE12345'] = { id: 'ELSEWHERE12345', name: 'y.json', parents: ['ZZZ'], size: '5', appProperties: { cosmosBackup: '1' } }; r.sim.contents['ELSEWHERE12345'] = 'secret';
+  r.sim.files['TRASHED1234567'] = { id: 'TRASHED1234567', name: 'z.json', parents: ['FOLDERID1234567'], size: '5', trashed: true, appProperties: { cosmosBackup: '1' } }; r.sim.contents['TRASHED1234567'] = 'secret';
+  assert.deepEqual(await driveAction('A', { action: 'get', id: 'GOODFILE123456' }, ctx), { id: 'GOODFILE123456', name: 'good.json', content: body });
+  for (const id of ['STRANGER123456', 'ELSEWHERE12345', 'TRASHED1234567']) await fails(driveAction('A', { action: 'get', id }, ctx), 404, 'not_a_backup');
+  await fails(driveAction('A', { action: 'get', id: '../../etc' }, ctx), 400, 'bad_id');
+  await fails(driveAction('A', { action: 'get', id: 'short' }, ctx), 400, 'bad_id');
+  await fails(driveAction('A', { action: 'get', id: 'MISSINGFILE1234' }, ctx), 404);
+  await fails(driveAction('A', { action: 'nope' }, ctx), 400, 'bad_action');
+});
+test('drive: expired access asks to reconnect; accounts are isolated; no Drive call happens when not connected', async () => {
+  const mem = memDb();
+  const expired = driveCtx(driveSim({}), mem);
+  expired.ctx.fetch = (async (u: any) => (String(u).includes('oauth2') ? new Response(JSON.stringify({ access_token: 'AT' })) : new Response('{}', { status: 401 }))) as typeof fetch;
+  await connectDrive(mem, 'A');
+  await fails(driveAction('A', { action: 'list' }, expired.ctx), 401, 'needs_reauthorization');
+  assert.equal(mem.conns.get('A|google_drive').status, 'needs_reauthorization');
+  const fresh = driveCtx(driveSim(), mem);
+  await fails(driveAction('B', { action: 'list' }, fresh.ctx), 409, 'not_connected');          // B never connected
+  assert.equal(fresh.calls.filter((c) => c.url.includes('googleapis.com/drive')).length, 0);
+});
+test('drive route is reachable only with a valid session', async () => {
+  const { ctx, calls } = mkCtx(() => undefined);
+  const r = await handleRequest(req('drive-backup', { headers: {}, body: JSON.stringify({ action: 'list' }) }), ctx, verifier({ good: 'u1' }));
+  assert.equal(r.status, 401); assert.equal(calls.length, 0);
 });

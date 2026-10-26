@@ -30,6 +30,7 @@ export const FloatingMusicPlayer: React.FC = () => {
     nextMusicTrack,
     prevMusicTrack,
     openExternalMusicApp,
+    openMusicWidget,
     setActiveModule,
   } = useApp();
 
@@ -110,6 +111,13 @@ export const FloatingMusicPlayer: React.FC = () => {
           }`}
         >
           Spotify
+        </button>
+        <button
+          onClick={openMusicWidget}
+          title="Open your Apple Music and Spotify playlists"
+          className="flex-1 rounded-md py-1.5 text-[#6B7067] dark:text-[#A6AB9F] transition-colors hover:text-[#252821] dark:hover:text-[#ECEDE6]"
+        >
+          Playlists
         </button>
       </div>
 

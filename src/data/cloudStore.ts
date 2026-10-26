@@ -1,6 +1,6 @@
 import { requireSupabase } from '../lib/supabase';
 import {
-  CosmosAppData, RowSet, TABLE_ORDER, TableName, PK, ChangePlan, fromRows, toRows, planChanges,
+  CosmosAppData, RowSet, TABLE_ORDER, TableName, PK, ChangePlan, SaveFailure, findInvalidIds, fromRows, toRows, planChanges,
 } from './cloudData';
 
 type Row = Record<string, unknown>;
@@ -20,26 +20,39 @@ export async function loadUserData(): Promise<{ data: CosmosAppData; rows: RowSe
   return { data, rows: toRows(data) };
 }
 
-/** Apply a diff. Throws on the first failure so the caller keeps its old snapshot and retries. */
-export async function applyChanges(plan: ChangePlan): Promise<void> {
+/**
+ * Apply a diff table by table. A failure in one table never blocks the others, and each failed table is reported
+ * so the caller can keep ITS edits pending (unsaved) while the rest are marked saved.
+ */
+export async function applyChanges(plan: ChangePlan): Promise<SaveFailure[]> {
   const sb = requireSupabase();
+  const failed = new Map<TableName, SaveFailure>();
+  const fail = (table: TableName, e: { message: string; code?: string }) => { if (!failed.has(table)) failed.set(table, { table, message: e.message, code: e.code }); };
+
+  // Never send a non-UUID to a uuid column: report it instead of poisoning the batch.
+  for (const bad of findInvalidIds(plan)) fail(bad.table, { message: `invalid input syntax for type uuid: "${bad.value}"` });
+
   for (const t of TABLE_ORDER) {
     const rows = plan.upserts[t];
-    if (rows?.length) {
+    if (!rows?.length || failed.has(t)) continue;
+    try {
       const { error } = await sb.from(t).upsert(rows as never, { onConflict: PK[t].join(',') });
-      if (error) throw new Error(`Saving ${t} failed: ${error.message}`);
-    }
+      if (error) fail(t, error);
+    } catch (e) { fail(t, { message: (e as Error).message }); }          // network exceptions
   }
   for (const t of [...TABLE_ORDER].reverse() as TableName[]) {
     const rows = plan.deletes[t];
-    if (!rows?.length) continue;
-    for (const r of rows) {
-      let q = sb.from(t).delete();
-      for (const c of PK[t]) q = q.eq(c, r[c] as string);
-      const { error } = await q;
-      if (error) throw new Error(`Deleting from ${t} failed: ${error.message}`);
-    }
+    if (!rows?.length || failed.has(t)) continue;
+    try {
+      for (const r of rows) {
+        let q = sb.from(t).delete();
+        for (const c of PK[t]) q = q.eq(c, r[c] as string);
+        const { error } = await q;
+        if (error) { fail(t, error); break; }
+      }
+    } catch (e) { fail(t, { message: (e as Error).message }); }
   }
+  return [...failed.values()];
 }
 
 export { planChanges, toRows };

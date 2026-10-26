@@ -1,9 +1,10 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { requireSupabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
+import type { PlaylistItem } from '../lib/playlists';
 
 export interface AppleMusicPrefs { url: string | null; x: number; y: number; w: number; h: number; mode: 'compact' | 'expanded' | 'minimized'; visible: boolean }
-export interface Prefs { appleMusic?: Partial<AppleMusicPrefs>; mailFolder?: string }
+export interface Prefs { appleMusic?: Partial<AppleMusicPrefs>; mailFolder?: string; playlists?: PlaylistItem[]; activePlaylistId?: string }
 
 interface PrefsContextType { prefs: Prefs; loaded: boolean; update: (patch: Prefs) => void }
 const Ctx = createContext<PrefsContextType | undefined>(undefined);

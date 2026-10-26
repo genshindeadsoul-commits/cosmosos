@@ -19,6 +19,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { dayKey, daysInMonth, leadingBlanks, monthLabel, shiftMonth, todayKey } from '../../lib/dates';
 import { TaskListType } from '../../types';
 
 export const DashboardView: React.FC = () => {
@@ -46,7 +47,8 @@ export const DashboardView: React.FC = () => {
 
   const [quickTitle, setQuickTitle] = useState('');
   const [selectedQuickList, setSelectedQuickList] = useState<TaskListType>('Work');
-  const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(19);
+  const [view, setView] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(new Date().getDate());
 
   // Remaining tasks for today (active only)
   const pendingTasks = tasks.filter((t) => t.status !== 'completed');
@@ -57,6 +59,8 @@ export const DashboardView: React.FC = () => {
     .filter((t) => t.type === 'expense')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
+  const busyDays = new Set<string>([...tasks.filter((t) => t.status !== 'completed' && t.dueDate).map((t) => t.dueDate), ...events.map((e) => e.date)]);
+
   const handleQuickAdd = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!quickTitle.trim()) return;
@@ -65,8 +69,7 @@ export const DashboardView: React.FC = () => {
       list: selectedQuickList,
       priority: 'MEDIUM',
       status: 'todo',
-      dueDate: '2026-10-18',
-      dueTime: '02:30 PM',
+      dueDate: todayKey(),
     });
     setQuickTitle('');
   };
@@ -267,17 +270,19 @@ export const DashboardView: React.FC = () => {
           <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-4 shadow-xs">
             <div className="flex items-center justify-between pb-3">
               <span className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
-                October 2026
+                {monthLabel(view.y, view.m)}
               </span>
               <div className="flex items-center gap-1">
                 <button
                   aria-label="Previous month"
+                  onClick={() => setView((v) => shiftMonth(v.y, v.m, -1))}
                   className="rounded p-1 text-[#8A8E85] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 <button
                   aria-label="Next month"
+                  onClick={() => setView((v) => shiftMonth(v.y, v.m, 1))}
                   className="rounded p-1 text-[#8A8E85] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -296,34 +301,35 @@ export const DashboardView: React.FC = () => {
               <span>Sun</span>
             </div>
 
-            {/* Calendar grid (October 2026 starts on Thursday Oct 1) */}
+            {/* Real calendar for the viewed month. Dots mark days that actually have a task due or an event. */}
             <div className="grid grid-cols-7 gap-1 text-center text-xs">
-              {/* Prev month days */}
-              <span className="py-1.5 text-[#C9CDC2] dark:text-[#4A5046]">28</span>
-              <span className="py-1.5 text-[#C9CDC2] dark:text-[#4A5046]">29</span>
-              <span className="py-1.5 text-[#C9CDC2] dark:text-[#4A5046]">30</span>
-
-              {/* October days */}
-              {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
+              {Array.from({ length: leadingBlanks(view.y, view.m, 1) }, (_, i) => {
+                const prev = shiftMonth(view.y, view.m, -1);
+                const n = daysInMonth(prev.y, prev.m) - leadingBlanks(view.y, view.m, 1) + i + 1;
+                return <span key={`p${i}`} className="py-1.5 text-[#C9CDC2] dark:text-[#4A5046]">{n}</span>;
+              })}
+              {Array.from({ length: daysInMonth(view.y, view.m) }, (_, i) => i + 1).map((day) => {
+                const key = dayKey(view.y, view.m, day);
                 const isSelected = day === selectedCalendarDay;
-                const hasDot = [2, 12, 14, 15, 16, 18, 19, 21].includes(day);
+                const isToday = key === todayKey();
+                const hasDot = busyDays.has(key);
                 return (
                   <button
                     key={day}
                     onClick={() => setSelectedCalendarDay(day)}
+                    aria-label={`${key}${hasDot ? ', has items' : ''}`}
+                    aria-current={isToday ? 'date' : undefined}
                     className={`relative flex flex-col items-center justify-center py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                       isSelected
                         ? 'bg-[#3D5240] dark:bg-[#526B55] text-white shadow-xs'
+                        : isToday
+                        ? 'ring-1 ring-[#252821] dark:ring-[#ECEDE6] text-[#252821] dark:text-[#ECEDE6]'
                         : 'text-[#252821] dark:text-[#ECEDE6] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]'
                     }`}
                   >
                     <span>{day}</span>
                     {hasDot && (
-                      <span
-                        className={`h-1 w-1 rounded-full ${
-                          isSelected ? 'bg-white' : 'bg-[#526B55] dark:bg-[#A8BDA1]'
-                        }`}
-                      />
+                      <span className={`h-1 w-1 rounded-full ${isSelected ? 'bg-white' : 'bg-[#526B55] dark:bg-[#A8BDA1]'}`} />
                     )}
                   </button>
                 );
@@ -545,15 +551,15 @@ export const DashboardView: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => toggleHabitCheckin(primaryHabit.id, '2026-10-18')}
+                  onClick={() => toggleHabitCheckin(primaryHabit.id, todayKey())}
                   className={`rounded p-1 transition-colors ${
-                    primaryHabit.checkins['2026-10-18']
+                    primaryHabit.checkins[todayKey()]
                       ? 'text-[#477653] dark:text-[#91B594]'
                       : 'text-[#8A8E85] hover:text-[#252821] dark:hover:text-[#ECEDE6]'
                   }`}
                   aria-label="Toggle habit completion"
                 >
-                  {primaryHabit.checkins['2026-10-18'] ? (
+                  {primaryHabit.checkins[todayKey()] ? (
                     <CheckCircle2 className="h-5 w-5" />
                   ) : (
                     <Circle className="h-5 w-5" />

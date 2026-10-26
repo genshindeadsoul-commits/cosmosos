@@ -8,6 +8,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { currentWeek, todayKey } from '../../lib/dates';
 import { GoalCategory } from '../../types';
 
 export const GoalsHabitsView: React.FC = () => {
@@ -34,18 +35,10 @@ export const GoalsHabitsView: React.FC = () => {
   const [goalCurrent, setGoalCurrent] = useState('0');
   const [goalTarget, setGoalTarget] = useState('100');
   const [goalUnit, setGoalUnit] = useState('₹');
-  const [goalDate, setGoalDate] = useState('2026-12-31');
+  const [goalDate, setGoalDate] = useState(`${new Date().getFullYear()}-12-31`);
 
-  // 7-day window dates matching screenshot (Oct 12 to Oct 18)
-  const daysOfWeek = [
-    { dayLetter: 'M', dateNum: '12', dateKey: '2026-10-12' },
-    { dayLetter: 'T', dateNum: '13', dateKey: '2026-10-13' },
-    { dayLetter: 'W', dateNum: '14', dateKey: '2026-10-14' },
-    { dayLetter: 'T', dateNum: '15', dateKey: '2026-10-15' },
-    { dayLetter: 'F', dateNum: '16', dateKey: '2026-10-16' },
-    { dayLetter: 'S', dateNum: '17', dateKey: '2026-10-17' },
-    { dayLetter: 'S', dateNum: '18', dateKey: '2026-10-18' },
-  ];
+  // The current week (Mon-Sun) from today's real date.
+  const weekDays = currentWeek();
 
   const handleCreateHabit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -125,7 +118,7 @@ export const GoalsHabitsView: React.FC = () => {
               <tr className="text-[#8A8E85] font-semibold">
                 <th className="py-2 px-3 w-64">Habit</th>
                 <th className="py-2 px-3 text-center w-24">Streak</th>
-                {daysOfWeek.map((d) => (
+                {weekDays.map((d) => (
                   <th key={d.dateKey} className="py-2 px-2 text-center">
                     <div className="text-[10px] uppercase font-bold text-[#6B7067] dark:text-[#A6AB9F]">
                       {d.dayLetter}
@@ -154,7 +147,7 @@ export const GoalsHabitsView: React.FC = () => {
                       <span>{h.streak}d</span>
                     </span>
                   </td>
-                  {daysOfWeek.map((d) => {
+                  {weekDays.map((d) => {
                     const isDone = !!h.checkins[d.dateKey];
                     return (
                       <td key={d.dateKey} className="py-3 px-2 text-center">

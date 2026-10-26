@@ -9,7 +9,6 @@ export type ModuleType =
   | 'tasks'
   | 'settings'
   | 'mail'
-  | 'whatsapp'
   | 'admin';
 
 export type TaskListType = 'Inbox' | 'Work' | 'Study' | 'Health' | 'Personal' | 'Holiday trip';
@@ -233,3 +232,6 @@ export interface GmailMessage {
   isRead: boolean;
   isStarred?: boolean;
 }
+
+/** Content for a new table. Row ids are intentionally absent: the app assigns real UUIDs. */
+export type NewTable = Omit<TableCollection, 'id' | 'updatedAt' | 'rows'> & { rows: Omit<TableRow, 'id'>[] };

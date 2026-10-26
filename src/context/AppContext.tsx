@@ -5,6 +5,7 @@ import {
   CalendarEvent,
   Note,
   TableCollection,
+  NewTable,
   Transaction,
   Subscription,
   WorkoutLog,
@@ -17,8 +18,9 @@ import {
   UserProfile,
   GmailMessage,
 } from '../types';
-import { CosmosAppData, EMPTY_DATA, newId } from '../data/cloudData';
+import { CosmosAppData, EMPTY_DATA, newId, healIds, describeSaveFailures, computeStreak } from '../data/cloudData';
 import { loadUserData, applyChanges, planChanges, toRows } from '../data/cloudStore';
+import { TABLE_ORDER } from '../data/cloudData';
 import type { RowSet } from '../data/cloudData';
 import { exportCosmosBackup, parseBackup } from '../data/backup';
 import { useAuth } from './AuthContext';
@@ -91,7 +93,7 @@ interface AppContextType {
   addTableRows: (tableId: string, rows: Record<string, any>[]) => void;
   updateTableRow: (tableId: string, rowId: string, row: Record<string, any>) => void;
   deleteTableRow: (tableId: string, rowId: string) => void;
-  addTableCollection: (table: Omit<TableCollection, 'id' | 'updatedAt'>) => void;
+  addTableCollection: (table: NewTable) => void;
   
   // Transactions & Subscriptions
   addTransaction: (tx: Omit<Transaction, 'id'>) => void;
@@ -133,9 +135,13 @@ interface AppContextType {
   retryLoad: () => void;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
   saveError: string | null;
+  retrySave: () => void;
 
   // Backup / Restore
   exportBackup: () => void;
+  getCosmosData: () => CosmosAppData;
+  mergeRecords: (d: CosmosAppData) => void;
+  replaceAllData: (d: CosmosAppData) => void;
   importBackup: (jsonContent: string) => { success: boolean; error?: string };
   resetAllData: () => void;
   
@@ -176,7 +182,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const ROUTABLE: ModuleType[] = ['dashboard', 'notes', 'tables', 'expenses', 'fitness', 'goals', 'trackers', 'tasks', 'mail', 'whatsapp', 'settings', 'admin'];
+const ROUTABLE: ModuleType[] = ['dashboard', 'notes', 'tables', 'expenses', 'fitness', 'goals', 'trackers', 'tasks', 'mail', 'settings', 'admin'];
 export const moduleFromPath = (pathname: string): ModuleType => {
   const seg = pathname.replace(/^\/+|\/+$/g, '').split('/')[0] as ModuleType;
   return ROUTABLE.includes(seg) ? seg : 'dashboard';
@@ -282,7 +288,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // App Data
-  const [data, setData] = useState<CosmosAppData | null>(null);
+  const [data, setDataRaw] = useState<CosmosAppData | null>(null);
+  // Single choke point for ALL record updates: any temporary/non-UUID id is repaired here, once, with references kept
+  // consistent, so a view can never poison the shared save queue (the "r-1792730074210" bug).
+  const pendingRemap = useRef(new Map<string, string>());
+  const setData: React.Dispatch<React.SetStateAction<CosmosAppData | null>> = (update) =>
+    setDataRaw((prev) => {
+      const next = typeof update === 'function' ? (update as (p: CosmosAppData | null) => CosmosAppData | null)(prev) : update;
+      if (!next) return next;
+      const healed = healIds(next);
+      healed.map.forEach((v, k) => pendingRemap.current.set(k, v));
+      return healed.data;
+    });
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string>('');
   const [selectedTrackerId, setSelectedTrackerId] = useState<string>('');
@@ -292,8 +309,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isQuickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [quickCaptureTab, setQuickCaptureTab] = useState<'task' | 'note' | 'expense' | 'workout' | 'habit'>('task');
   
-  // Gmail & WhatsApp
-
   // Music Player
   const [musicState, setMusicState] = useState<MusicPlayerState>(() => {
     const activeProvider = musicRegistry.getActiveProvider();
@@ -372,28 +387,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const dataRef = useRef<CosmosAppData | null>(null);
   dataRef.current = data;
 
+  const retries = useRef(0);
+  const lastToast = useRef('');
   const flush = async () => {
     if (saving.current || !syncedRows.current || !dataRef.current) return;
     const target = dataRef.current;
+    const before = syncedRows.current;
     const nextRows = toRows(target);
-    const plan = planChanges(syncedRows.current, nextRows);
-    if (plan.isEmpty) return;
+    const plan = planChanges(before, nextRows);
+    if (plan.isEmpty) { if (saveStatus === 'error') { setSaveError(null); setSaveStatus('saved'); } return; }
     saving.current = true;
     setSaveStatus('saving');
     try {
-      await applyChanges(plan);
-      syncedRows.current = nextRows;           // only advance after the server accepted it
-      setSaveError(null);
-      setSaveStatus('saved');
+      const failures = await applyChanges(plan);
+      // Only tables the server accepted advance the "known saved" snapshot; failed tables stay pending (edits are kept).
+      const failedTables = new Set(failures.map((f) => f.table));
+      syncedRows.current = Object.fromEntries(TABLE_ORDER.map((t) => [t, failedTables.has(t) ? before[t] : nextRows[t]])) as RowSet;
+      if (failures.length === 0) {
+        retries.current = 0; lastToast.current = '';
+        setSaveError(null); setSaveStatus('saved');                       // "Saved" only after the server confirmed everything
+      } else {
+        const msg = describeSaveFailures(failures);
+        setSaveError(msg); setSaveStatus('error');
+        if (lastToast.current !== msg) { lastToast.current = msg; showToast(msg, 'error'); }
+        if (retries.current++ < 3) setTimeout(() => void flush(), 8000 * retries.current);   // gentle automatic retry for transient problems
+      }
     } catch (err) {
-      setSaveError((err as Error).message);
-      setSaveStatus('error');
-      showToast(`Not saved: ${(err as Error).message}`, 'error');
+      const msg = describeSaveFailures([{ table: 'notes', message: (err as Error).message }]).replace('Notes', 'Your changes');
+      setSaveError(msg); setSaveStatus('error');
     } finally {
       saving.current = false;
       if (dataRef.current !== target && saveStatusRetry.current) flushSoon();  // changed during save
     }
   };
+  const retrySave = () => { retries.current = 0; lastToast.current = ''; void flush(); };
+
   /** Wait for any in-flight save, push remaining edits, report whether the server is fully up to date. */
   const flushNow = async (): Promise<boolean> => {
     if (timer.current) clearTimeout(timer.current);
@@ -407,6 +435,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!clean && !window.confirm('Some recent changes could not be saved. Sign out anyway and lose them?')) return;
     await authSignOut();
   };
+  // If healing re-keyed a record the user had selected, follow it to its new id.
+  useEffect(() => {
+    if (pendingRemap.current.size === 0) return;
+    const m = pendingRemap.current; pendingRemap.current = new Map();
+    setSelectedNoteId((id) => (id && m.get(id)) || id);
+    setSelectedTableId((id) => m.get(id) ?? id);
+    setSelectedTrackerId((id) => m.get(id) ?? id);
+  }, [data]);
   const saveStatusRetry = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushSoon = () => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => void flush(), 600); };
@@ -809,10 +845,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Row deleted', 'info');
   };
 
-  const addTableCollection = (tableData: Omit<TableCollection, 'id' | 'updatedAt'>) => {
+  const addTableCollection = (tableData: NewTable) => {
     const newTbl: TableCollection = {
       ...tableData,
       id: newId(),
+      // Row ids are always assigned here: callers pass content only (a caller-made id like "r-123" is not a UUID).
+      rows: tableData.rows.map((r, i) => ({ ...r, id: newId(), index: typeof r.index === 'number' ? r.index : i + 1 })),
       updatedAt: new Date().toISOString(),
     };
     setData((prev) => (prev ? { ...prev, tables: [...prev.tables, newTbl] } : null));
@@ -938,7 +976,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (h.id === habitId) {
             const currentVal = !!h.checkins[date];
             const nextCheckins = { ...h.checkins, [date]: !currentVal };
-            const streakCount = Object.values(nextCheckins).filter(Boolean).length;
+            const streakCount = computeStreak(nextCheckins);          // consecutive days, same rule as when loading
             return {
               ...h,
               checkins: nextCheckins,
@@ -1014,10 +1052,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const exportBackup = () => {
     if (data) {
-      exportCosmosBackup(data);
+      exportCosmosBackup(data, { theme: themePreference });
       showToast('Cosmos OS JSON backup exported', 'success');
     }
   };
+
+  const mergeRecords = (d: CosmosAppData) => setData((prev) => {
+    if (!prev) return prev;
+    const have = (arr: { id: string }[]) => new Set(arr.map((x) => x.id));
+    const add = <T extends { id: string }>(cur: T[], inc: T[]) => { const h = have(cur); return [...cur, ...inc.filter((x) => !h.has(x.id))]; };
+    return {
+      tasks: add(prev.tasks, d.tasks), events: add(prev.events, d.events), notes: add(prev.notes, d.notes),
+      tables: add(prev.tables, d.tables), transactions: add(prev.transactions, d.transactions),
+      subscriptions: add(prev.subscriptions, d.subscriptions), workouts: add(prev.workouts, d.workouts),
+      goals: add(prev.goals, d.goals), habits: add(prev.habits, d.habits), trackers: add(prev.trackers, d.trackers),
+    };
+  });
+  /** Replace everything with a validated backup. Callers must have confirmed AND saved a safety copy first. */
+  const replaceAllData = (d: CosmosAppData) => {
+    setData({ ...d });
+    setSelectedNoteId(d.notes[0]?.id ?? null); setSelectedTableId(d.tables[0]?.id ?? ''); setSelectedTrackerId(d.trackers[0]?.id ?? '');
+  };
+  const getCosmosData = (): CosmosAppData => dataRef.current ?? EMPTY_DATA;
 
   // Additive restore: validates, remaps legacy ids to UUIDs, skips records already present.
   const importBackup = (jsonContent: string) => {
@@ -1026,18 +1082,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       showToast(`Restore failed: ${res.error}`, 'error');
       return { success: false, error: res.error };
     }
-    setData((prev) => {
-      if (!prev) return prev;
-      const have = (arr: { id: string }[]) => new Set(arr.map((x) => x.id));
-      const add = <T extends { id: string }>(cur: T[], inc: T[]) => { const h = have(cur); return [...cur, ...inc.filter((x) => !h.has(x.id))]; };
-      const d = res.data;
-      return {
-        tasks: add(prev.tasks, d.tasks), events: add(prev.events, d.events), notes: add(prev.notes, d.notes),
-        tables: add(prev.tables, d.tables), transactions: add(prev.transactions, d.transactions),
-        subscriptions: add(prev.subscriptions, d.subscriptions), workouts: add(prev.workouts, d.workouts),
-        goals: add(prev.goals, d.goals), habits: add(prev.habits, d.habits), trackers: add(prev.trackers, d.trackers),
-      };
-    });
+    mergeRecords(res.data);
     showToast(`Restored ${res.counts.total} records (${res.counts.remapped} had legacy IDs and were re-keyed).`, 'success');
     return { success: true };
   };
@@ -1129,8 +1174,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         retryLoad: () => setLoadNonce((n) => n + 1),
         saveStatus,
         saveError,
+        retrySave,
         signOutUser: signOut,
         exportBackup,
+        getCosmosData,
+        mergeRecords,
+        replaceAllData,
         importBackup,
         resetAllData,
         isSearchOpen,

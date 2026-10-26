@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx --test tests/cloudData.test.ts tests/functions.test.ts tests/csv.test.ts tests/widgets.test.ts && vitest run",
+    "test": "tsx --test tests/cloudData.test.ts tests/functions.test.ts tests/csv.test.ts tests/widgets.test.ts tests/backup.test.ts && vitest run",
     "check:functions": "cd supabase/functions && for f in */index.ts; do npx --no-install deno check \"$f\" >/dev/null 2>&1 || { echo \"FAIL $f\"; exit 1; }; done; echo \"all functions type-check\""
   },
   "dependencies": {

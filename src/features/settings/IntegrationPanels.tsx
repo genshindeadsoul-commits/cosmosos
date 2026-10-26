@@ -28,7 +28,7 @@ export const SheetsImportPanel: React.FC = () => {
   const create = () => {
     if (!preview || !t || t.columns.length === 0) { showToast('The range has no data.', 'error'); return; }
     addTableCollection({ name: preview.title, description: 'Imported from Google Sheets (one-time copy)', columns: t.columns,
-      rows: t.rows.map((r, i) => ({ id: crypto.randomUUID(), ...r })) });
+      rows: t.rows });
     setPreview(null); setUrl('');
   };
 

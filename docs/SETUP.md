@@ -59,7 +59,8 @@ Implemented and tested against **mocked** provider responses. None of it has run
 |---|---|---|
 | **Apple Music** | Floating widget around Apple's official embedded player (`embed.music.apple.com`). Paste a playlist or album link. | Nothing server-side. No MusicKit, no developer membership. Apple handles sign-in/subscription inside its player. |
 | **Gmail** | Official Gmail API via the `api` function. Folders: Inbox, All Mail, Sent, Drafts, Starred, Spam, Trash. | Google OAuth client + secrets below |
-| **WhatsApp** | Panel that opens the official `https://web.whatsapp.com/` in a new tab (WhatsApp blocks framing). | Nothing |
+| **Google Drive backup** | Manual **Back Up Now** / Restore in Settings → Backup & Restore. New timestamped file per backup in a visible *Cosmos OS Backups* folder; verified after upload; never overwrites. | Google OAuth (same client), Drive API enabled |
+| **Music & Playlists** | Settings → Music & Playlists: you add Apple Music / Spotify links and switch them on; only those appear in the music hub (top-bar music icon → Playlists). | Nothing server-side; Spotify remote control optional |
 | Calendar import, Sheets import, Spotify remote control, Health ingest | Same `api` function | Same Google secrets (+ Spotify app for Spotify) |
 
 ### 5a. Secrets (`supabase secrets set`, or Dashboard → Edge Functions → Secrets)
@@ -86,6 +87,14 @@ No CLI? Supabase Dashboard → Project Settings → Integrations → GitHub can 
 2. **OAuth consent screen → Data access / Scopes**: add `gmail.readonly`, `gmail.modify`, `gmail.send`, `email` (+ `calendar.readonly`, `spreadsheets.readonly` if wanted). Add your Google account(s) as **Test users**.
 3. **Credentials → your Web client → Authorized redirect URIs**: add **`https://<PROJECT_REF>.supabase.co/functions/v1/api/oauth-callback`** (keep the existing `/auth/v1/callback` one: that is Supabase sign-in, and it is untouched).
 
+### 5c-2. Google Drive backups
+1. APIs & Services → Library: enable the **Google Drive API**.
+2. OAuth consent screen → Data access: add scope **`https://www.googleapis.com/auth/drive.file`** (it lets Cosmos OS see only the files it creates itself; Google classes it as *non-sensitive*, so no verification is needed for it). Add yourself as a test user if the app is in Testing.
+3. No new redirect URI: the existing `.../functions/v1/api/oauth-callback` is reused.
+4. In the app: Settings → Backup & Restore → **Connect Google Drive** → **Back Up Now**. Check Drive for a folder named *Cosmos OS Backups*.
+- Restore offers **Add missing items** (safe, default) or **Replace everything** (asks for confirmation, shows exact counts, and first saves a safety backup of your current data to Drive; if that fails, nothing is changed).
+- Backup files contain your records and non-sensitive settings (theme, playlists, layout). They never contain passwords, tokens, or other credentials. Files over 10 MB are refused.
+
 ### 5d. Gmail permissions are incremental
 - **Connect Gmail** requests **read-only** only.
 - **Enable mark read / star** later adds `gmail.modify`; **Enable send email** adds `gmail.send`. Existing grants are kept.
@@ -107,12 +116,15 @@ Personal use with yourself as a test user needs none of this.
 - [ ] Revoke at myaccount.google.com/permissions → next action shows *Reconnect*. Disconnect → `select * from integration_secrets` (service role) has no row for you.
 - [ ] Sign-in with Google still works after all of the above (Supabase sign-in is separate).
 - [ ] Two accounts: each sees only their own mail and connection state.
+- [ ] Drive: connect → *Back Up Now* → a new `cosmos-os-backup-….json` appears in Drive under *Cosmos OS Backups* and in the history list; the *Last successful backup* time updates.
+- [ ] Drive: make a change, back up again (two files now, the first untouched); *Restore → Add missing items* with the first backup; then try *Replace* on a throwaway account/data and confirm the safety backup appears first.
+- [ ] Drive: revoke access at myaccount.google.com/permissions → the panel offers *Reconnect* and your app data is unaffected.
+- [ ] Music: Settings → Music & Playlists → add an Apple Music playlist link and a Spotify link; switch one off; reorder; only enabled ones appear in the hub picker.
 - [ ] Apple Music: paste a playlist link → songs play (subscription/browser permitting); drag, minimize, hide, refresh → layout restored.
-- [ ] WhatsApp: *Open WhatsApp Web* opens a new tab; scanning the QR links your phone.
 - [ ] Calendar/Sheets/Spotify/Health: see the earlier notes if you enabled them.
 
 ### Not implemented
-Drive linking (needs Google Picker), Sheets export, two-way Calendar sync, Gmail draft editing / trash / delete / labels beyond star and read, HTML mail rendering (plain text only, by design), WhatsApp message access (not possible without scraping), an Android health companion app.
+Drive linking (needs Google Picker), Sheets export, two-way Calendar sync, Gmail draft editing / trash / delete / labels beyond star and read, HTML mail rendering (plain text only, by design), an Android health companion app.
 
 ## Known limits (by design or untested)
 - **Switching accounts from outside the app** (e.g. signing in as someone else in another tab) discards edits that were still inside the 600 ms save window. Signing out *inside* the app flushes first and asks before discarding if a save fails.

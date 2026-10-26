@@ -4,6 +4,11 @@ export const db: Record<string, Record<string, Row[]>> = {};   // userId -> tabl
 export const fnCalls: { name: string; body: any }[] = [];
 export const fnHandlers: Record<string, (body: any) => unknown> = {};
 export const failWrites = { on: false };
+export const failTables = new Set<string>();   // simulate one table's writes failing (e.g. a rejected row)
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const NOT_UUID = new Set(['user_id', 'provider_id', 'external_id']);
+// Same behaviour as Postgres uuid columns: reject anything that isn't a real UUID.
+const uuidError = (t: string, r: Row) => { if (t === 'user_settings' || t === 'integration_connections') return null; for (const [k, v] of Object.entries(r)) if ((k === 'id' || k.endsWith('_id')) && !NOT_UUID.has(k) && v != null && !UUID.test(String(v))) return { message: `invalid input syntax for type uuid: "${v}"`, code: '22P02' }; return null; };
 export const oauthCalls: unknown[] = [];
 export const exchange: { result: 'fail' | 'ok'; message: string } = { result: 'fail', message: 'PKCE code verifier not found in storage.' };
 export const calls: { op: string; table: string; n?: number }[] = [];
@@ -34,7 +39,7 @@ function from(t: string) {
       };
       return b;
     },
-    upsert: async (rows: Row[] | Row) => { if (failWrites.on) return { error: { message: 'simulated outage' } }; const arr = Array.isArray(rows) ? rows : [rows]; calls.push({ op: 'upsert', table: t, n: arr.length });
+    upsert: async (rows: Row[] | Row) => { if (failWrites.on) return { error: { message: 'simulated outage' } }; if (failTables.has(t)) return { error: { message: 'simulated failure in ' + t } }; const arr = Array.isArray(rows) ? rows : [rows]; calls.push({ op: 'upsert', table: t, n: arr.length }); for (const r of arr) { const e = uuidError(t, r); if (e) return { error: e }; }
       for (const r of arr) { const k = tbl(t); const i = k.findIndex((x) => x.id === r.id && x.habit_id === r.habit_id && x.checkin_date === r.checkin_date); if (i >= 0) k[i] = { ...k[i], ...r }; else k.push({ ...r, user_id: currentUser.id }); }
       return { error: null }; },
     update: () => ({ eq: async () => ({ error: null }) }),

@@ -54,7 +54,7 @@ export async function finishOAuth(params: { code?: string | null; state?: string
       return back({ integration: provider, integration_error: `Could not verify access (${vr.status}). Check that the API is enabled for your project.` });
     }
     const info = await vr.json().catch(() => ({})) as any;
-    const label: string | null = info.emailAddress ?? info.email ?? info.display_name ?? null;
+    const label: string | null = info.emailAddress ?? info.email ?? info.user?.emailAddress ?? info.display_name ?? null;
     const id = await ctx.db.saveConnection(userId, provider, { status: 'connected', account_label: label, granted_scopes: granted, last_error: null });
     await ctx.db.saveSecret(id, await encryptJson({ refresh_token: tok.refresh_token }, ctx.env.TOKEN_ENCRYPTION_KEY!));
     return back({ integration: provider, result: 'connected' });

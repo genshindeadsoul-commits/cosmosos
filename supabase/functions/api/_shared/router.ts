@@ -1,5 +1,6 @@
 import { disconnect, calendarImport, finishOAuth, healthIngest, sheetsPreview, spotifyToken, startOAuth } from './handlers.ts';
 import { gmailAction } from './gmailApi.ts';
+import { driveAction } from './driveApi.ts';
 import { type Ctx, HttpError } from './ports.ts';
 
 type UserRoute = (userId: string, body: any, ctx: Ctx) => Promise<unknown>;
@@ -9,6 +10,7 @@ const USER_ROUTES: Record<string, UserRoute> = {
   'oauth-start': startOAuth,
   'oauth-disconnect': disconnect,
   'gmail': gmailAction,
+  'drive-backup': driveAction,
   'calendar-import': (u, _b, c) => calendarImport(u, c),
   'sheets-preview': sheetsPreview,
   'spotify-token': (u, _b, c) => spotifyToken(u, c),

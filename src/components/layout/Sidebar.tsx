@@ -14,9 +14,7 @@ import {
   Globe2,
   X,
   BookOpen,
-  MessageCircle,
   Mail,
-  Music2,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -61,7 +59,6 @@ export const Sidebar: React.FC = () => {
     setSelectedTableId,
     userProfile,
     setProfileOpen,
-    openMusicWidget,
   } = useApp();
   const { isAdmin } = useAuth();
   const { isConnected } = useIntegrations();
@@ -145,26 +142,12 @@ export const Sidebar: React.FC = () => {
             })}
           </nav>
 
-          {/* Quick External Channels (WhatsApp & Gmail) */}
+          {/* Quick launchers: Gmail and the music hub */}
           <div className="pt-2 border-t border-[#DFE1D9] dark:border-[#383D35]">
             <div className="px-3 pb-1.5 text-[11px] font-bold tracking-wider text-[#8A8E85] uppercase">
               Channels
             </div>
             <div className="space-y-0.5">
-              <button
-                onClick={() => {
-                  handleNavClick('whatsapp');
-                  if (window.innerWidth < 768) setSidebarOpen(false);
-                }}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
-              >
-                <div className="flex items-center gap-2.5">
-                  <MessageCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>WhatsApp</span>
-                </div>
-                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Web</span>
-              </button>
-
               <button
                 onClick={() => {
                   handleNavClick('mail');
@@ -177,20 +160,6 @@ export const Sidebar: React.FC = () => {
                   <span>Gmail</span>
                 </div>
                 <span className="text-[10px] font-semibold text-[#8A8E85]">{isConnected('gmail') ? 'Connected' : 'Not connected'}</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  openMusicWidget();
-                  if (window.innerWidth < 768) setSidebarOpen(false);
-                }}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Music2 className="h-4 w-4 text-[#FA243C]" />
-                  <span>Apple Music</span>
-                </div>
-                <span className="text-[10px] font-semibold text-[#8A8E85]">Player</span>
               </button>
             </div>
           </div>

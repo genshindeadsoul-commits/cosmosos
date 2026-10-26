@@ -8,6 +8,7 @@ import {
   Target,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { todayKey } from '../../lib/dates';
 import { ExpenseCategory, TaskListType, TaskPriority } from '../../types';
 
 export const QuickCaptureModal: React.FC = () => {
@@ -28,7 +29,7 @@ export const QuickCaptureModal: React.FC = () => {
   const [taskTitle, setTaskTitle] = useState('');
   const [taskList, setTaskList] = useState<TaskListType>('Inbox');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('MEDIUM');
-  const [taskDueDate, setTaskDueDate] = useState('2026-10-18');
+  const [taskDueDate, setTaskDueDate] = useState(todayKey());
   const [taskDueTime, setTaskDueTime] = useState('02:30 PM');
 
   // Note form state

@@ -4,6 +4,8 @@ import React from 'react';
 import { render, screen, waitFor, cleanup, within, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import * as fake from './fakeSupabase';
+import { buildBackupJson } from '../../src/data/backup';
+import { EMPTY_DATA as EMPTY } from '../../src/data/cloudData';
 
 vi.mock('../../src/lib/supabase', () => ({ supabase: fake.fakeClient, isSupabaseConfigured: true, supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'anon', requireSupabase: () => fake.fakeClient }));
 import App from '../../src/App';
@@ -11,7 +13,7 @@ import App from '../../src/App';
 const REAL_LOCATION = Object.getOwnPropertyDescriptor(window, 'location')!;
 const NAV = ['Dashboard', 'Notes', 'Tables', 'Expenses', 'Fitness', 'Goals & Habits', 'Custom Trackers', 'Tasks & Calendar', 'Settings'];
 
-beforeEach(() => { fake.exchange.result = 'fail'; fake.exchange.message = 'PKCE code verifier not found in storage.'; Object.defineProperty(window, 'location', REAL_LOCATION); fake.failWrites.on = false; window.history.replaceState({}, '', '/'); fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
+beforeEach(() => { fake.failTables.clear(); fake.exchange.result = 'fail'; fake.exchange.message = 'PKCE code verifier not found in storage.'; Object.defineProperty(window, 'location', REAL_LOCATION); fake.failWrites.on = false; window.history.replaceState({}, '', '/'); fake.fnCalls.length = 0; Object.keys(fake.fnHandlers).forEach((k) => delete fake.fnHandlers[k]); cleanup(); localStorage.clear(); fake.calls.length = 0; Object.keys(fake.db).forEach((k) => delete fake.db[k]); window.matchMedia = window.matchMedia || ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }) as any); });
 
 describe('auth gate', () => {
   it('returning from Google with a code but no session explains the address mismatch instead of silently showing login', async () => {
@@ -602,47 +604,40 @@ describe('sign-out and account switching', () => {
 });
 
 
-// ---------------- Apple Music widget & WhatsApp ----------------
+// ---------------- Music hub: playlists + widget ----------------
 class PE extends MouseEvent { pointerId: number; constructor(t: string, i: any = {}) { super(t, i); this.pointerId = i.pointerId ?? 1; } }
 const PL = 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
 const PL_EMBED = 'https://embed.music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
-const openApple = async (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole('button', { name: /^Apple Music/ }));
-const widget = () => screen.queryByRole('region', { name: 'Apple Music' }) as HTMLElement | null;
-const frame = () => document.querySelector('iframe[title="Apple Music player"]') as HTMLIFrameElement | null;
-const loadUrl = async (user: ReturnType<typeof userEvent.setup>, url = PL) => { await user.type(await screen.findByLabelText(/Apple Music playlist or album link/), url); await user.click(screen.getByRole('button', { name: 'Load' })); };
+const APPLE_ITEM = { id: '99999999-9999-4999-8999-999999999991', name: 'Today’s Hits', provider: 'apple', kind: 'playlist', openUrl: PL, embedUrl: PL_EMBED, enabled: true };
+const SP_ID = '37i9dQZF1DXcBWIGoYBM5M';
+const SPOTIFY_ITEM = { id: '99999999-9999-4999-8999-999999999992', name: 'Deep Focus', provider: 'spotify', kind: 'playlist', openUrl: `https://open.spotify.com/playlist/${SP_ID}`, embedUrl: `https://open.spotify.com/embed/playlist/${SP_ID}`, enabled: true };
+const prefsOf = (preferences: any, uid = 'u1') => ({ user_settings: [{ user_id: uid, preferences }] });
+const hub = async (user: ReturnType<typeof userEvent.setup>) => { await user.click(screen.getByRole('button', { name: 'Toggle Focus Sound & Music Player' })); };
+const openApple = async (user: ReturnType<typeof userEvent.setup>) => { await hub(user); await user.click(await screen.findByRole('button', { name: 'Playlists' })); };
+const widget = () => screen.queryByRole('region', { name: /^(Apple Music|Spotify|Music player)$/ }) as HTMLElement | null;
+const frame = () => document.querySelector('iframe[title$=" player"]') as HTMLIFrameElement | null;   // Apple Music or Spotify embed
 const savedPrefs = () => fake.db['u1']?.user_settings?.[0]?.preferences?.appleMusic;
 
 describe('Apple Music widget (official embed)', () => {
   beforeEach(() => { (window as any).PointerEvent = PE; Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true }); Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true }); });
 
-  it('rejects bad links with a specific message and never creates an iframe; accepts a real playlist link', async () => {
+  it('the hub opens nothing by default; with no playlists it explains how to add one instead of showing a paste box', async () => {
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    expect(widget()).toBeNull();                                           // nothing until the user opens it
+    expect(widget()).toBeNull();
     await openApple(user);
-    await loadUrl(user, 'https://open.spotify.com/playlist/abc');
-    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Only music.apple.com links are supported.');
+    const w = await screen.findByRole('region', { name: 'Music player' });
+    expect(within(w).getByText('No playlists enabled')).toBeTruthy();
     expect(frame()).toBeNull();
-    await user.clear(screen.getByLabelText(/Apple Music playlist or album link/));
-    await user.type(screen.getByLabelText(/Apple Music playlist or album link/), 'https://music.apple.com/us/artist/x/159260351');
-    await user.click(screen.getByRole('button', { name: 'Load' }));
-    expect((await screen.findByRole('alert')).textContent).toMatch(/artist links can’t be embedded/);
-    await user.clear(screen.getByLabelText(/Apple Music playlist or album link/));
-    await user.type(screen.getByLabelText(/Apple Music playlist or album link/), PL);
-    await user.click(screen.getByRole('button', { name: 'Load' }));
-    await waitFor(() => expect(frame()).toBeTruthy());
-    const f = frame()!;
-    expect(f.getAttribute('src')).toBe(PL_EMBED);
-    expect(f.getAttribute('sandbox')).toMatch(/allow-scripts/); expect(f.getAttribute('sandbox')).not.toMatch(/allow-top-navigation(?!-by)/);
-    expect(f.getAttribute('allow')).toMatch(/autoplay/);
-    // No fake transport controls: the only controls are window controls, not play/pause/next.
-    expect(within(widget()!).queryByRole('button', { name: /^(play|pause|next|previous|skip)/i })).toBeNull();
-    await waitFor(() => expect(savedPrefs()).toMatchObject({ url: PL, visible: true }), { timeout: 4000 });
+    expect(within(w).queryByLabelText(/link/i)).toBeNull();
+    await user.click(within(w).getByRole('button', { name: 'Open Music & Playlists' }));
+    expect(window.location.pathname).toBe('/settings');
+    expect(screen.getByRole('heading', { name: 'Music & Playlists' })).toBeTruthy();
   });
 
   it('keeps the SAME iframe node across module navigation, unrelated state updates, minimize and resize; Hide unmounts it', async () => {
-    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } } }] };
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
@@ -669,7 +664,7 @@ describe('Apple Music widget (official embed)', () => {
   });
 
   it('drags (clamped to the viewport), persists position and size, and restores after a refresh', async () => {
-    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } } }] };
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     render(<App />); await screen.findAllByText('Dashboard');
     await waitFor(() => expect(widget()).toBeTruthy());
@@ -698,8 +693,8 @@ describe('Apple Music widget (official embed)', () => {
     expect(frame()!.getAttribute('src')).toBe(PL_EMBED);
   });
 
-  it('Change swaps the playlist (new iframe src) and shows the loading state until Apple’s frame fires load', async () => {
-    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+  it('the picker lists only ENABLED playlists, swaps the embed, and shows the loading state until the frame fires load', async () => {
+    fake.db['u1'] = prefsOf({ playlists: [APPLE_ITEM, { ...SPOTIFY_ITEM, enabled: true }, { ...SPOTIFY_ITEM, id: '99999999-9999-4999-8999-999999999993', name: 'Hidden one', openUrl: 'https://open.spotify.com/playlist/x', enabled: false }], appleMusic: { visible: true, mode: 'compact' } });
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
@@ -707,22 +702,26 @@ describe('Apple Music widget (official embed)', () => {
     expect(within(widget()!).getByRole('status').textContent).toMatch(/Loading Apple Music/);
     fireEvent.load(frame()!);
     await waitFor(() => expect(within(widget()!).queryByRole('status')).toBeNull());
-    await user.click(screen.getByRole('button', { name: 'Change playlist or album' }));
-    const input = screen.getByLabelText(/Apple Music playlist or album link/);
-    await user.clear(input); await user.type(input, 'https://music.apple.com/gb/album/folklore/1528112358');
-    await user.click(screen.getByRole('button', { name: 'Load' }));
-    await waitFor(() => expect(frame()!.getAttribute('src')).toBe('https://embed.music.apple.com/gb/album/folklore/1528112358'));
-    expect(screen.getByRole('link', { name: 'Open in Apple Music' }).getAttribute('href')).toBe('https://music.apple.com/gb/album/folklore/1528112358');
+    const picker = within(widget()!).getByLabelText('Playlist') as HTMLSelectElement;
+    expect([...picker.options].map((o) => o.textContent)).toEqual(['Today’s Hits (Apple Music)', 'Deep Focus (Spotify)']);   // the disabled one never appears
+    await user.selectOptions(picker, SPOTIFY_ITEM.id);
+    await waitFor(() => expect(frame()!.getAttribute('src')).toBe(SPOTIFY_ITEM.embedUrl));
+    expect(frame()!.getAttribute('title')).toBe('Spotify player');
+    expect(screen.getByRole('link', { name: 'Open in Spotify' }).getAttribute('href')).toBe(SPOTIFY_ITEM.openUrl);
+    await waitFor(() => expect(fake.db['u1'].user_settings[0].preferences.activePlaylistId).toBe(SPOTIFY_ITEM.id), { timeout: 4000 });
+    await user.selectOptions(within(widget()!).getByLabelText('Playlist'), APPLE_ITEM.id);
+    await waitFor(() => expect(frame()!.getAttribute('src')).toBe(PL_EMBED));
+    expect(screen.getByRole('link', { name: 'Open in Apple Music' }).getAttribute('href')).toBe(PL);
   });
 
   it('a frame that never loads shows a recoverable message after the timeout; Retry remounts it; load clears it', async () => {
-    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact' } } }] };
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } } }] };
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const real = globalThis.setTimeout;
     const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: any, ms?: number, ...a: any[]) => real(fn, ms === 12000 ? 20 : ms, ...a)) as any);   // shorten only the 12 s "slow" timer
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    const alert = await screen.findByText(/Still loading\. Apple’s player may be blocked/, undefined, { timeout: 3000 });
+    const alert = await screen.findByText(/Still loading.*player may be blocked/, undefined, { timeout: 3000 });
     expect(alert.closest('[role="alert"]')).toBeTruthy();
     const links = within(widget()!).getAllByRole('link', { name: 'Open in Apple Music' });
     expect(links.length).toBe(2); links.forEach((l) => expect(l.getAttribute('href')).toBe(PL));
@@ -736,7 +735,7 @@ describe('Apple Music widget (official embed)', () => {
 
   it('on a phone the widget docks to the bottom instead of floating, and cannot be dragged off', async () => {
     Object.defineProperty(window, 'innerWidth', { value: 400, configurable: true });
-    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { appleMusic: { url: PL, visible: true, mode: 'compact', x: 50, y: 50 } } }] };
+    fake.db['u1'] = { user_settings: [{ user_id: 'u1', preferences: { playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact', x: 50, y: 50 } } }] };
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     render(<App />); await screen.findAllByText('Dashboard');
     await waitFor(() => expect(widget()).toBeTruthy());
@@ -747,7 +746,7 @@ describe('Apple Music widget (official embed)', () => {
   });
 
   it('is per-account: another user never sees (or inherits) this user’s player', async () => {
-    fake.db['A'] = { user_settings: [{ user_id: 'A', preferences: { appleMusic: { url: PL, visible: true } } }] };
+    fake.db['A'] = { user_settings: [{ user_id: 'A', preferences: { playlists: [APPLE_ITEM], appleMusic: { visible: true } } }] };
     fake.setUser({ id: 'A', email: 'a@x.dev' });
     render(<App />); await screen.findAllByText('Dashboard');
     await waitFor(() => expect(frame()).toBeTruthy());
@@ -758,34 +757,406 @@ describe('Apple Music widget (official embed)', () => {
   });
 });
 
-describe('WhatsApp panel', () => {
-  it('offers the official WhatsApp Web link in a new tab, never embeds it, and makes no connection claims', async () => {
+
+describe('Settings → Music & Playlists', () => {
+  const goSettings = async (user: ReturnType<typeof userEvent.setup>) => user.click(NAVBTN(/Settings/));
+  const prefsNow = () => fake.db['u1']?.user_settings?.[0]?.preferences;
+  const add = async (user: ReturnType<typeof userEvent.setup>, link: string, name = '') => {
+    const l = screen.getByLabelText(/Add a playlist, album, or track link/); await user.clear(l); await user.type(l, link);
+    const n = screen.getByLabelText('Display name (optional)'); await user.clear(n); if (name) await user.type(n, name);
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+  };
+
+  it('lives inside the existing Settings page (no new sidebar entry), starts empty, and never auto-lists an account', async () => {
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    await user.click(screen.getByRole('button', { name: /^WhatsApp/ }));
-    const link = await screen.findByRole('link', { name: /Open WhatsApp Web/ });
-    expect(link.getAttribute('href')).toBe('https://web.whatsapp.com/');
-    expect(link.getAttribute('target')).toBe('_blank'); expect(link.getAttribute('rel')).toMatch(/noopener/); expect(link.getAttribute('rel')).toMatch(/noreferrer/);
-    expect(document.querySelector('iframe[src*="whatsapp"]')).toBeNull();
-    const panel = within(screen.getByRole('main'));
-    expect(panel.getAllByText(/Linked devices/).length).toBeGreaterThan(0); expect(panel.getByText(/Link a device/)).toBeTruthy();
-    expect(screen.getByRole('main').textContent).toMatch(/can’t see your chats/);
-    expect(screen.getByRole('main').textContent).not.toMatch(/\b(connected|synced|logged in)\b/i);
-    expect(window.location.pathname).toBe('/whatsapp');
+    const navLabels = within(screen.getByRole('navigation', { name: 'Main Navigation' })).getAllByRole('button').map((b) => b.textContent);
+    expect(navLabels.join('|')).not.toMatch(/Music|Playlist/i);
+    await goSettings(user);
+    expect(screen.getByRole('heading', { name: 'Music & Playlists' })).toBeTruthy();
+    expect(screen.getByText(/No playlists yet/)).toBeTruthy();
+    expect(screen.getByText(/never lists your whole library/)).toBeTruthy();
+    expect(screen.getByText(/No account connection is needed here/)).toBeTruthy();
   });
-  it('click-to-chat validates the number, builds an official wa.me link, and saves a follow-up task', async () => {
+
+  it('validates links with specific messages, recognizes the provider live, and refuses duplicates', async () => {
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    await user.click(screen.getByRole('button', { name: /^WhatsApp/ }));
-    await user.click(await screen.findByRole('button', { name: 'Save as follow-up task' }));
-    expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(fake.db['u1']?.tasks ?? []).toHaveLength(0);
-    await user.type(screen.getByLabelText(/Phone number/), '+91 98765 43210');
-    await user.type(screen.getByLabelText(/Message \(optional\)/), 'Hi & bye');
-    expect(screen.getByRole('link', { name: 'Open chat' }).getAttribute('href')).toBe('https://wa.me/919876543210?text=Hi%20%26%20bye');
-    await user.click(screen.getByRole('button', { name: 'Save as follow-up task' }));
-    await waitFor(() => expect(fake.db['u1'].tasks?.[0]?.title).toBe('WhatsApp follow-up: +919876543210'), { timeout: 4000 });
+    await goSettings(user);
+    const l = screen.getByLabelText(/Add a playlist, album, or track link/);
+    await user.type(l, 'https://www.youtube.com/playlist?list=PL123');
+    expect(screen.getByText(/youtube\.com links aren’t supported/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add' }).hasAttribute('disabled')).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/aren’t supported/);
+    expect(prefsNow()?.playlists).toBeUndefined();                                       // nothing saved for a bad link
+    await user.clear(l); await user.type(l, `https://open.spotify.com/playlist/${SP_ID}?si=zzz`);
+    expect(screen.getByText('Recognized: Spotify playlist.')).toBeTruthy();
+    await add(user, `https://open.spotify.com/playlist/${SP_ID}?si=zzz`, 'Deep Focus');
+    await screen.findByLabelText('Name for Deep Focus');
+    await add(user, `https://open.spotify.com/intl-in/playlist/${SP_ID}`);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Already in your list as “Deep Focus”/);
+    expect(screen.getAllByLabelText(/^Name for /)).toHaveLength(1);
+  });
+
+  it('add, rename, switch off, reorder, and remove all persist; only enabled items reach the hub; a reload keeps everything', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await add(user, PL, 'Hits');
+    await add(user, `https://open.spotify.com/playlist/${SP_ID}`, 'Focus');
+    await add(user, 'https://music.apple.com/gb/album/folklore/1528112358');                  // unnamed -> sensible default name
+    await screen.findByLabelText('Name for Apple Music album');
+    expect(screen.getAllByLabelText(/^Name for /).map((e) => (e as HTMLInputElement).value)).toEqual(['Hits', 'Focus', 'Apple Music album']);
+    const hits = screen.getByLabelText('Name for Hits');
+    await user.clear(hits); await user.type(hits, 'Morning Hits'); await user.tab();
+    await user.click(screen.getByRole('switch', { name: 'Enable Focus' }));                   // switch off
+    await user.click(screen.getByRole('button', { name: 'Move Apple Music album up' }));
+    await user.click(screen.getByRole('button', { name: 'Remove Morning Hits' }));
+    await user.click(screen.getByRole('button', { name: 'Yes' }));
+    await waitFor(() => expect(prefsNow().playlists.map((p: any) => [p.name, p.enabled])).toEqual([['Apple Music album', true], ['Focus', false]]), { timeout: 4000 });
+    expect(prefsNow().playlists.every((p: any) => /^[0-9a-f-]{36}$/.test(p.id))).toBe(true);
+    cleanup(); localStorage.clear();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    expect(screen.getAllByLabelText(/^Name for /).map((e) => (e as HTMLInputElement).value)).toEqual(['Apple Music album', 'Focus']);
+    expect((screen.getByRole('switch', { name: 'Enable Focus' }) as HTMLInputElement).checked).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Play Apple Music album' }));
+    const w = await screen.findByRole('region', { name: 'Apple Music' });
+    await waitFor(() => expect(frame()?.getAttribute('src')).toBe('https://embed.music.apple.com/gb/album/folklore/1528112358'));
+    expect(within(w).queryByLabelText('Playlist')).toBeNull();                                // only one enabled -> no picker, "Focus" is not offered
+    expect(w.textContent).not.toMatch(/Focus/);
+    expect((screen.getByRole('button', { name: 'Play Focus' }) as HTMLButtonElement).disabled).toBe(true);   // can't play a disabled one
+  });
+
+  it('switching hub tabs (ambient/Spotify) or editing OTHER playlists never remounts the playing Apple Music iframe', async () => {
+    fake.db['u1'] = prefsOf({ playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } });
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()).toBeTruthy());
+    const node = frame()!;
+    await hub(user);
+    await user.click(await screen.findByRole('button', { name: 'Spotify' }));
+    expect(frame()).toBe(node);
+    await user.click(screen.getByRole('button', { name: /Ambient/ }));
+    expect(frame()).toBe(node);
+    await goSettings(user);
+    await add(user, `https://open.spotify.com/playlist/${SP_ID}`, 'Other');
+    await screen.findByLabelText('Name for Other');
+    await user.click(screen.getByRole('switch', { name: 'Enable Other' }));
+    await user.click(screen.getByRole('button', { name: 'Move Other up' }));
+    expect(frame()).toBe(node);                                                              // same DOM node: Apple playback not interrupted
+    expect(frame()!.getAttribute('src')).toBe(PL_EMBED);
+  });
+
+  it('a Spotify playlist plays in Spotify’s embed with an honest sign-in note, and disabling the active one falls back or empties the hub', async () => {
+    fake.db['u1'] = prefsOf({ playlists: [SPOTIFY_ITEM], appleMusic: { visible: true, mode: 'compact' } });
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()?.getAttribute('src')).toBe(SPOTIFY_ITEM.embedUrl));
+    fireEvent.load(frame()!);
+    expect(await screen.findByText(/full songs only if you’re signed in to Spotify/)).toBeTruthy();
+    expect(frame()!.getAttribute('allow')).toMatch(/encrypted-media/);
+    await goSettings(user);
+    await user.click(screen.getByRole('switch', { name: 'Enable Deep Focus' }));
+    await waitFor(() => expect(frame()).toBeNull());
+    expect(within(screen.getByRole('region', { name: 'Music player' })).getByText('No playlists enabled')).toBeTruthy();
+  });
+
+  it('Spotify connect/disconnect lives here and reflects the real connection state', async () => {
+    fake.db['u1'] = { integration_connections: [{ id: 'c1', provider: 'spotify', status: 'connected', account_label: 'me@x.com', last_synced_at: null, last_error: null, granted_scopes: [] }] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    fake.fnHandlers['oauth-disconnect'] = () => ({ ok: true });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await waitFor(() => expect(screen.getByText(/connected as me@x\.com/)).toBeTruthy());
+    await user.click(screen.getByRole('button', { name: 'Disconnect Spotify' }));
+    await waitFor(() => expect(fake.fnCalls.some((c) => c.name === 'oauth-disconnect' && c.body.provider === 'spotify')).toBe(true));
+  });
+
+  it('a playlist saved by the earlier single-link version is carried over, not lost', async () => {
+    fake.db['u1'] = prefsOf({ appleMusic: { url: PL, visible: true, mode: 'compact' } });
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()?.getAttribute('src')).toBe(PL_EMBED));
+    await goSettings(user);
+    expect(screen.getByLabelText('Name for Apple Music playlist')).toBeTruthy();
+  });
+});
+
+describe('WhatsApp is gone', () => {
+  it('has no sidebar entry, no Settings card, no route, and no references in the page', async () => {
+    window.history.replaceState({}, '', '/whatsapp');
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    expect(screen.queryByRole('button', { name: /whatsapp/i })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/whatsapp|wa\.me/i);
+    await user.click(NAVBTN(/Settings/));
+    expect(document.body.textContent).not.toMatch(/whatsapp|wa\.me/i);
+    expect(screen.getByRole('button', { name: /^Gmail/ })).toBeTruthy();                 // unrelated integrations untouched
+  });
+});
+
+// ---------------- Google Drive backup & restore ----------------
+describe('Settings → Backup & Restore (Google Drive)', () => {
+  const DRV = 'https://www.googleapis.com/auth/drive.file';
+  const driveConn = (extra: any = {}) => ({ id: 'c-drive', user_id: 'u1', provider: 'google_drive', status: 'connected', account_label: 'me@x.com', last_synced_at: null, last_error: null, granted_scopes: [DRV, 'email'], ...extra });
+  const goSettings = async (user: ReturnType<typeof userEvent.setup>) => user.click(NAVBTN(/Settings/));
+  const seed = (extra: any = {}) => { fake.db['u1'] = { ...seedNote(), tasks: [{ id: '66666666-6666-4666-8666-666666666661', user_id: 'u1', title: 'Pay rent', list_name: 'Inbox', status: 'todo', priority: 'LOW', due_date: null, created_at: '2026-10-01T00:00:00Z' }], integration_connections: [driveConn()], ...extra }; };
+  interface Stored { id: string; name: string; content: string; createdTime: string }
+  const server = (opts: { files?: Stored[]; failCreate?: { error: string; message: string }; failGet?: { error: string; message: string } } = {}) => {
+    const files: Stored[] = opts.files ?? []; let n = 0;
+    fake.fnHandlers['drive-backup'] = (b) => {
+      if (b.action === 'list') return { backups: [...files].reverse().map((f) => ({ id: f.id, name: f.name, size: f.content.length, createdTime: f.createdTime, records: (() => { try { return Object.values(JSON.parse(f.content).data ?? {}).reduce((a: number, v: any) => a + (Array.isArray(v) ? v.length : 0), 0) as number; } catch { return 0; } })(), formatVersion: 3 })) };
+      if (b.action === 'get') { if (opts.failGet) return { __error: opts.failGet }; const f = files.find((x) => x.id === b.id); return f ? { id: f.id, name: f.name, content: f.content } : { __error: { error: 'not_a_backup', message: 'That file is not a Cosmos OS backup.' } }; }
+      if (b.action === 'create') {
+        if (opts.failCreate) return { __error: opts.failCreate };
+        JSON.parse(b.content);
+        const f = { id: `FILE${++n}00000000000`, name: `cosmos-os-backup-2026-10-23_09-3${n}-00Z.json`, content: b.content, createdTime: `2026-10-23T09:3${n}:00Z` };
+        files.push(f);
+        const c = fake.db['u1'].integration_connections.find((x: any) => x.provider === 'google_drive')!; c.last_synced_at = f.createdTime; c.last_error = null;
+        return { id: f.id, name: f.name, size: b.content.length, createdTime: f.createdTime, records: Object.values(JSON.parse(b.content).data).reduce((a: number, v: any) => a + v.length, 0) };
+      }
+    };
+    return files;
+  };
+  const createCalls = () => fake.fnCalls.filter((c) => c.name === 'drive-backup' && c.body.action === 'create');
+  const backupOf = (over: any = {}) => { const base = JSON.parse(buildBackupJson({ ...EMPTY, notes: [{ id: '77777777-7777-4777-8777-777777777771', title: 'From backup', content: 'x', excerpt: 'x', starred: false, tags: [], createdAt: '', updatedAt: '' }, { id: NOTE_ID, title: 'Quarterly plan (old)', content: 'x', excerpt: 'x', starred: false, tags: [], createdAt: '', updatedAt: '' }] }, { theme: 'light' })); return JSON.stringify({ ...base, ...over }); };
+
+  it('is part of Settings (no sidebar item), and Drive is not duplicated in the integrations list', async () => {
+    seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' }); server();
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    expect(within(screen.getByRole('navigation', { name: 'Main Navigation' })).queryByRole('button', { name: /backup|drive/i })).toBeNull();
+    await goSettings(user);
+    expect(screen.getByRole('heading', { name: /Backup & Restore/ })).toBeTruthy();
+    expect(within(screen.getByRole('main')).queryAllByText('Google Drive')).toHaveLength(0);          // only the Backup panel controls it
+    expect(screen.getByText(/Manual only: nothing is backed up automatically/)).toBeTruthy();
+    expect(screen.getByText(/never the rest of your Drive/)).toBeTruthy();
+  });
+
+  it('not connected: offers Connect, explains the app works without Drive, and asks for the narrow connection', async () => {
+    fake.db['u1'] = seedNote(); fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    fake.fnHandlers['oauth-start'] = () => ({ url: 'https://accounts.google.com/x' });
+    const assign = vi.fn(); Object.defineProperty(window, 'location', { value: { ...window.location, assign, search: '', pathname: '/', origin: 'http://localhost', hash: '' }, writable: true });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    const panel = within(screen.getByRole('region', { name: /Backup & Restore/ }));
+    expect(panel.getByText('Not connected')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Back Up Now' })).toBeNull();
+    expect(screen.getByText(/works fully without Drive/)).toBeTruthy();
+    await user.click(panel.getByRole('button', { name: 'Connect Google Drive' }));
+    await waitFor(() => expect(assign).toHaveBeenCalled());
+    expect(fake.fnCalls.find((c) => c.name === 'oauth-start')!.body).toEqual({ provider: 'google_drive' });
+    await user.click(NAVBTN(/Notes/)); expect(await screen.findByDisplayValue('Quarterly plan')).toBeTruthy();   // app fully usable
+  });
+
+  it('Back Up Now sends a complete, credential-free backup, then shows the last successful time and the new history entry', async () => {
+    seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' }); server();
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await screen.findByText('No backups in Drive yet.');
+    expect(screen.getByText('No backup has been made yet.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Back Up Now' }));
+    expect(await screen.findByText(/Backed up 2 records to Drive as “cosmos-os-backup-/)).toBeTruthy();
+    const sent = JSON.parse(createCalls()[0].body.content);
+    expect(sent).toMatchObject({ app: 'cosmos-os', formatVersion: 3, counts: { notes: 1, tasks: 1 } });
+    expect(sent.data.notes[0].title).toBe('Quarterly plan'); expect(sent.data.tasks[0].title).toBe('Pay rent');
+    expect(JSON.stringify(sent)).not.toMatch(/token|secret|password|authorization|refresh/i);
+    const list = await screen.findByRole('list', { name: 'Backup history' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    await waitFor(() => expect(screen.getByLabelText('Backup status').textContent).toMatch(/Last successful backup:/));
+  });
+
+  it('a FAILED backup leaves all data and earlier backups untouched, says so, and can be retried', async () => {
+    seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const old: Stored = { id: 'OLD0000000000001', name: 'cosmos-os-backup-old.json', content: backupOf(), createdTime: '2026-10-01T00:00:00Z' };
+    const files = server({ files: [old], failCreate: { error: 'backup_verify_failed', message: 'Drive stored an incomplete copy, so it was discarded.' } });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await screen.findByRole('list', { name: 'Backup history' });
+    await user.click(screen.getByRole('button', { name: 'Back Up Now' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Backup failed: Drive stored an incomplete copy/);
+    expect(alert.textContent).toMatch(/Your data here is unchanged, and your earlier backups are untouched/);
+    expect(files).toHaveLength(1); expect(files[0].content).toBe(old.content);
+    expect(fake.db['u1'].notes).toHaveLength(1); expect(fake.db['u1'].tasks).toHaveLength(1);
+    expect(within(screen.getByRole('list', { name: 'Backup history' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Back Up Now' }).hasAttribute('disabled')).toBe(false);   // can retry
+  });
+
+  it('expired Drive permission asks to reconnect; a missing server function or network failure is explained; the app stays usable', async () => {
+    fake.db['u1'] = { ...seedNote(), integration_connections: [driveConn({ status: 'needs_reauthorization', last_error: 'Authorization expired or was revoked.' })] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    expect(screen.getByText('Access expired or was revoked')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reconnect Google Drive' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Back Up Now' })).toBeNull();
+    cleanup(); fake.db['u1'].integration_connections = [driveConn()];                              // connected, but the function is unreachable
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    expect((await screen.findByRole('alert')).textContent).toMatch(/may not be deployed yet/);
+    await user.click(screen.getByRole('button', { name: 'Back Up Now' }));
+    expect((await screen.findAllByRole('alert')).some((a) => /Backup failed: .*may not be deployed yet.*Your data here is unchanged/.test(a.textContent ?? ''))).toBe(true);
+    await user.click(NAVBTN(/Notes/)); expect(await screen.findByDisplayValue('Quarterly plan')).toBeTruthy();
+  });
+
+  it('restore (default: add missing) validates, summarizes, requires confirmation, and keeps everything you have', async () => {
+    seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    server({ files: [{ id: 'B1000000000000001', name: 'cosmos-os-backup-b1.json', content: backupOf(), createdTime: '2026-10-22T08:00:00Z' }] });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await user.click(await screen.findByRole('button', { name: 'Restore cosmos-os-backup-b1.json' }));
+    const dlg = await screen.findByRole('dialog', { name: 'Confirm restore' });
+    expect(dlg.textContent).toMatch(/2 records \(you currently have 2\)/); expect(dlg.textContent).toMatch(/the file is complete and compatible/);
+    expect((within(dlg).getByRole('radio', { name: /Add missing items/ }) as HTMLInputElement).checked).toBe(true);
+    expect(fake.db['u1'].notes).toHaveLength(1);                                                 // nothing applied before confirming
+    await user.click(within(dlg).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Confirm restore' })).toBeNull();
+    expect(fake.db['u1'].notes).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Restore cosmos-os-backup-b1.json' }));
+    await user.click(await within(await screen.findByRole('dialog', { name: 'Confirm restore' })).findByRole('button', { name: 'Add missing items' }));
+    await waitFor(() => expect(fake.db['u1'].notes).toHaveLength(2), { timeout: 4000 });
+    expect(fake.db['u1'].notes.map((n: any) => n.title).sort()).toEqual(['From backup', 'Quarterly plan']);   // existing note kept, not overwritten by the older copy
+    expect(fake.db['u1'].tasks).toHaveLength(1);
+    expect(createCalls()).toHaveLength(0);                                                       // merging needs no safety backup
+  });
+
+  it('restore (replace) warns with exact counts, saves a safety backup FIRST, then replaces data and applies backed-up settings', async () => {
+    seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const files = server({ files: [{ id: 'B1000000000000001', name: 'cosmos-os-backup-b1.json', content: backupOf(), createdTime: '2026-10-22T08:00:00Z' }] });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await user.click(await screen.findByRole('button', { name: 'Restore cosmos-os-backup-b1.json' }));
+    const dlg = await screen.findByRole('dialog', { name: 'Confirm restore' });
+    await user.click(within(dlg).getByRole('radio', { name: /Replace everything/ }));
+    expect(within(dlg).getByRole('alert').textContent).toMatch(/remove 1 current item and overwrite 1 with the backup’s version/);   // task removed; note overwritten
+    expect(within(dlg).getByRole('alert').textContent).toMatch(/First, a safety backup of your current data is saved to Drive/);
+    await user.click(within(dlg).getByRole('button', { name: 'Save safety backup, then replace' }));
+    await waitFor(() => expect(fake.db['u1'].notes.map((n: any) => n.title).sort()).toEqual(['From backup', 'Quarterly plan (old)']), { timeout: 5000 });
+    await waitFor(() => expect(fake.db['u1'].tasks).toHaveLength(0), { timeout: 5000 });
+    expect(createCalls()).toHaveLength(1);
+    const safety = JSON.parse(createCalls()[0].body.content);
+    expect(safety.data.tasks[0].title).toBe('Pay rent'); expect(safety.data.notes[0].title).toBe('Quarterly plan');   // what you had BEFORE the replace
+    expect(files).toHaveLength(2);
+    await waitFor(() => expect(fake.db['u1'].user_settings?.[0]?.theme).toBe('light'), { timeout: 4000 });           // backed-up theme applied
+    expect(await screen.findByText(/A safety backup of what you had before is in your Drive history/)).toBeTruthy();
+  });
+
+  it('if the safety backup cannot be saved, a replace is cancelled and NOTHING is deleted', async () => {
+    seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    server({ files: [{ id: 'B1000000000000001', name: 'cosmos-os-backup-b1.json', content: backupOf(), createdTime: '2026-10-22T08:00:00Z' }], failCreate: { error: 'rate_limited', message: 'x' } });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await user.click(await screen.findByRole('button', { name: 'Restore cosmos-os-backup-b1.json' }));
+    const dlg = await screen.findByRole('dialog', { name: 'Confirm restore' });
+    await user.click(within(dlg).getByRole('radio', { name: /Replace everything/ }));
+    await user.click(within(dlg).getByRole('button', { name: 'Save safety backup, then replace' }));
+    await waitFor(() => expect(screen.getAllByRole('alert').some((a) => /Restore cancelled: a safety backup of your current data couldn’t be saved first.*Nothing was changed/.test(a.textContent ?? ''))).toBe(true), { timeout: 3000 });
+    await new Promise((r) => setTimeout(r, 900));
+    expect(fake.db['u1'].notes).toHaveLength(1); expect(fake.db['u1'].notes[0].title).toBe('Quarterly plan'); expect(fake.db['u1'].tasks).toHaveLength(1);
+    expect(fake.calls.some((c) => c.op === 'delete')).toBe(false);
+  });
+
+  it('damaged, truncated, newer-format, or non-backup files are refused with a reason and change nothing', async () => {
+    seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const ok = JSON.parse(backupOf());
+    const mk = (id: string, name: string, content: string): Stored => ({ id, name, content, createdTime: '2026-10-22T08:00:00Z' });
+    server({ files: [
+      mk('TRUNC000000000001', 'truncated.json', JSON.stringify({ ...ok, data: { ...ok.data, notes: [ok.data.notes[0]] } })),
+      mk('NEWER000000000001', 'newer.json', JSON.stringify({ ...ok, formatVersion: 99 })),
+      mk('JUNK000000000001', 'junk.json', '{"app":"cosmos-os","formatVersion":3'),
+    ] });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    for (const [name, why] of [['truncated.json', /incomplete or damaged: "notes" should have 2 items but has 1/], ['newer.json', /newer version of Cosmos OS/], ['junk.json', /not valid JSON/]] as const) {
+      await user.click(await screen.findByRole('button', { name: `Restore ${name}` }));
+      const a = await screen.findByRole('alert');
+      expect(a.textContent).toMatch(/This backup can’t be restored/); expect(a.textContent).toMatch(why); expect(a.textContent).toMatch(/Nothing was changed/);
+      expect(screen.queryByRole('dialog', { name: 'Confirm restore' })).toBeNull();
+    }
+    expect(fake.db['u1'].notes).toHaveLength(1); expect(fake.db['u1'].tasks).toHaveLength(1);
+  });
+
+  it('a backup is always scoped to the signed-in account', async () => {
+    seed(); fake.db['B'] = { notes: [{ id: '88888888-8888-4888-8888-888888888881', user_id: 'B', title: 'Bob secret', content: '', excerpt: '', starred: false, tags: [], created_at: '', updated_at: '' }], integration_connections: [{ ...driveConn(), user_id: 'B' }] };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' }); server();
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await goSettings(user);
+    await user.click(await screen.findByRole('button', { name: 'Back Up Now' }));
+    await screen.findByText(/Backed up 2 records/);
+    expect(createCalls()[0].body.content).not.toContain('Bob secret');
+  });
+});
+
+describe('themes and console health on the changed screens', () => {
+  it('Settings (music, backup), Tables, Goals & Habits, Mail and the music hub render in light AND dark with no console errors', async () => {
+    fake.db['u1'] = { ...seedNote(), ...prefsOf({ playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } }), integration_connections: [{ id: 'c1', user_id: 'u1', provider: 'google_drive', status: 'connected', account_label: 'me@x.com', last_synced_at: null, last_error: null, granted_scopes: [] }, { id: 'c2', user_id: 'u1', provider: 'gmail', status: 'connected', account_label: 'me@x.com', last_synced_at: null, last_error: null, granted_scopes: ['https://www.googleapis.com/auth/gmail.readonly'] }] };
+    fake.fnHandlers['drive-backup'] = () => ({ backups: [] });
+    fake.fnHandlers['gmail'] = () => ({ messages: [], nextPageToken: null });
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const errors: string[] = []; const spy = vi.spyOn(console, 'error').mockImplementation((...a) => { errors.push(String(a[0]).slice(0, 140)); });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    for (const theme of ['Light', 'Dark']) {
+      await user.click(NAVBTN(/Settings/));
+      await user.click(screen.getByRole('button', { name: new RegExp(`^${theme}`) }));
+      await waitFor(() => expect(document.documentElement.classList.contains('dark')).toBe(theme === 'Dark'));
+      expect(screen.getByRole('heading', { name: 'Music & Playlists' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: /Backup & Restore/ })).toBeTruthy();
+      for (const label of [/Tables/, /Goals & Habits/, /Dashboard/, /Expenses/, /Fitness/, /Custom Trackers/]) await user.click(NAVBTN(label));
+      await user.click(screen.getByRole('button', { name: /^Gmail/ }));
+      await screen.findByRole('navigation', { name: 'Mail folders' });
+      await hub(user); await screen.findByRole('button', { name: 'Playlists' }); await hub(user);
+      expect(widget()).toBeTruthy();
+    }
+    spy.mockRestore();
+    expect(errors).toEqual([]);
+  });
+
+  it('the Dashboard and Fitness calendars show the real month and today, with no invented activity', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    const now = new Date(); const key = (d: number) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const monthName = now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    expect(screen.getByText(monthName)).toBeTruthy();
+    expect(screen.getByRole('button', { name: key(now.getDate()) }).getAttribute('aria-current')).toBe('date');
+    expect(screen.queryAllByRole('button', { name: /, has items$/ })).toHaveLength(0);                // an empty account has no activity dots
+    expect(document.body.textContent).not.toMatch(/October 2026(?!.*)/);
+    await user.click(NAVBTN(/Fitness/));
+    expect(screen.getByText(monthName)).toBeTruthy();
+  });
+
+  it('habit week and defaults follow the real current date (no hardcoded October 2026)', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(NAVBTN(/Goals & Habits/));
+    await user.click(screen.getByRole('button', { name: /New Habit/ })); await user.type(await screen.findByPlaceholderText(/Morning Breathwork/), 'Walk'); await user.click(screen.getByRole('button', { name: 'Save Habit' }));
+    const today = new Date(); const key = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    expect(await screen.findByRole('button', { name: `Toggle Walk for ${key}` })).toBeTruthy();       // today is always a column
+    const toggles = screen.getAllByRole('button', { name: /^Toggle Walk for / });
+    expect(toggles).toHaveLength(7);
+    await user.click(screen.getByRole('button', { name: `Toggle Walk for ${key}` }));
+    await waitFor(() => expect(fake.db['u1'].habit_checkins).toHaveLength(1), { timeout: 4000 });
   });
 });

@@ -7,9 +7,10 @@ import { useApp } from './AppContext';
 import { useAuth } from './AuthContext';
 
 /** UI id -> provider key stored in integration_connections / used by Edge Functions. */
-const OAUTH_PROVIDER: Record<string, string> = { gcal: 'google_calendar', gmail: 'gmail', gsheets: 'google_sheets', spotify: 'spotify' };
+const OAUTH_PROVIDER: Record<string, string> = { gcal: 'google_calendar', gmail: 'gmail', gsheets: 'google_sheets', gdrive: 'google_drive', spotify: 'spotify' };
 
 interface Connection { provider: string; status: string; account_label: string | null; last_synced_at: string | null; last_error: string | null; granted_scopes: string[] | null }
+export interface DriveBackup { id: string; name: string; size: number; createdTime: string; records: number; formatVersion: number }
 interface IngestToken { id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null }
 
 interface IntegrationsContextType {
@@ -20,6 +21,10 @@ interface IntegrationsContextType {
   disconnect: (uiId: string) => Promise<void>;
   sync: (uiId: string) => Promise<void>;
   busy: string | null;
+  refreshConnections: () => Promise<void>;
+  driveCreate: (content: string) => Promise<{ id: string; name: string; size: number; createdTime: string; records: number }>;
+  driveList: () => Promise<{ backups: DriveBackup[] }>;
+  driveGet: (id: string) => Promise<{ id: string; name: string; content: string }>;
   gmailScopes: string[];
   connectGmail: (capabilities?: ('modify' | 'send')[]) => Promise<void>;
   gmailList: (folder: string, q: string, pageToken?: string) => Promise<{ messages: GmailMessageSummary[]; nextPageToken: string | null }>;
@@ -113,6 +118,9 @@ export const IntegrationsProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   });
 
+  const driveCreate = async (content: string) => callFn<{ id: string; name: string; size: number; createdTime: string; records: number }>('drive-backup', { action: 'create', content });
+  const driveList = async () => callFn<{ backups: DriveBackup[] }>('drive-backup', { action: 'list' });
+  const driveGet = async (id: string) => callFn<{ id: string; name: string; content: string }>('drive-backup', { action: 'get', id });
   const gmailScopes = connections['gmail']?.status === 'connected' ? connections['gmail'].granted_scopes ?? [] : [];
   const connectGmail = (capabilities?: ('modify' | 'send')[]) => guard('gmail', async () => {
     const { url } = await callFn<{ url: string }>('oauth-start', { provider: 'gmail', ...(capabilities?.length ? { capabilities } : {}) });
@@ -140,7 +148,7 @@ export const IntegrationsProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   return (
-    <Ctx.Provider value={{ integrations, connectionsLoaded, isConnected, connect, disconnect, sync, busy, gmailScopes, connectGmail, gmailList, gmailGet, gmailAttachment, gmailModify, gmailSend, sheetsPreview, healthTokens, createHealthToken, revokeHealthToken }}>
+    <Ctx.Provider value={{ refreshConnections: refresh, driveCreate, driveList, driveGet, integrations, connectionsLoaded, isConnected, connect, disconnect, sync, busy, gmailScopes, connectGmail, gmailList, gmailGet, gmailAttachment, gmailModify, gmailSend, sheetsPreview, healthTokens, createHealthToken, revokeHealthToken }}>
       {children}
     </Ctx.Provider>
   );

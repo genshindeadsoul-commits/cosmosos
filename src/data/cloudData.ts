@@ -197,3 +197,72 @@ export function planChanges(prev: RowSet, next: RowSet): ChangePlan {
   }
   return plan;
 }
+
+// ---------- ID safety ----------
+/**
+ * Every id stored in a uuid column must be a real UUID. If anything (a view, an import, old state) ever hands us a
+ * temporary id like "r-1792730074210", rewrite it ONCE to a fresh UUID and keep every reference consistent
+ * (task -> note link, table -> rows, tracker -> entries). Returns the same object when nothing needed fixing,
+ * so it is safe to run on every state update.
+ */
+export function healIds(d: CosmosAppData): { data: CosmosAppData; map: Map<string, string> } {
+  const map = new Map<string, string>();
+  let changed = false;
+  const fix = (id: unknown): string => {
+    if (isUuid(id)) return id;
+    changed = true;
+    const key = String(id ?? '');
+    if (!map.has(key)) map.set(key, newId());
+    return map.get(key)!;
+  };
+  const withId = <T extends { id: string }>(arr: T[]): T[] => arr.map((x) => (isUuid(x.id) ? x : { ...x, id: fix(x.id) }));
+
+  const notes = withId(d.notes);
+  const noteIds = new Set(notes.map((n) => n.id));
+  const tasks = withId(d.tasks).map((t) => {
+    if (!t.linkedNoteId || (isUuid(t.linkedNoteId) && noteIds.has(t.linkedNoteId))) return t;
+    changed = true;                                          // remapped note, or a dangling link: never send it to a foreign key
+    const mapped = map.get(t.linkedNoteId);
+    return { ...t, linkedNoteId: mapped && noteIds.has(mapped) ? mapped : undefined };
+  });
+  const trackers = withId(d.trackers).map((t) => (t.entries.every((e) => isUuid(e.id)) ? t : { ...t, entries: withId(t.entries) }));
+  const tables = withId(d.tables).map((t) => (t.rows.every((r) => isUuid(r.id as string)) ? t : { ...t, rows: t.rows.map((r) => (isUuid(r.id as string) ? r : { ...r, id: fix(r.id) })) }));
+  if (!changed) return { data: d, map };
+  return { data: { ...d, notes, tasks, trackers, tables, events: withId(d.events), transactions: withId(d.transactions), subscriptions: withId(d.subscriptions), workouts: withId(d.workouts), goals: withId(d.goals), habits: withId(d.habits) }, map };
+}
+
+/** Defense in depth: which tables would send a non-UUID to a uuid column? (Should always be empty after healIds.) */
+export const UUID_COLUMNS: Record<string, string[]> = {
+  notes: ['id'], tasks: ['id', 'linked_note_id'], calendar_events: ['id'], transactions: ['id'], subscriptions: ['id'], workouts: ['id'], goals: ['id'],
+  habits: ['id'], habit_checkins: ['habit_id'], custom_trackers: ['id'], tracker_entries: ['id', 'tracker_id'], data_tables: ['id'], table_rows: ['id', 'table_id'],
+};
+export function findInvalidIds(plan: ChangePlan): { table: TableName; value: string }[] {
+  const bad: { table: TableName; value: string }[] = [];
+  for (const t of TABLE_ORDER) for (const row of plan.upserts[t] ?? []) for (const c of UUID_COLUMNS[t]) {
+    const v = row[c]; if (v != null && !isUuid(v)) bad.push({ table: t, value: String(v) });
+  }
+  return bad;
+}
+
+// ---------- readable save errors ----------
+export interface SaveFailure { table: TableName; message: string; code?: string }
+const MODULE_OF: Record<TableName, string> = {
+  notes: 'Notes', tasks: 'Tasks', calendar_events: 'Calendar', transactions: 'Expenses', subscriptions: 'Expenses', workouts: 'Fitness', goals: 'Goals',
+  habits: 'Habits', habit_checkins: 'Habits', custom_trackers: 'Trackers', tracker_entries: 'Trackers', data_tables: 'Tables', table_rows: 'Tables',
+};
+const reasonFor = (f: SaveFailure): string => {
+  const m = f.message;
+  if (/invalid input syntax for type uuid/i.test(m)) return 'an item had an invalid ID';
+  if (f.code === '42501' || /row-level security|permission denied/i.test(m)) return 'your account isn’t allowed to save this';
+  if (f.code === '23503' || /foreign key/i.test(m)) return 'it points at a record that no longer exists';
+  if (/failed to fetch|networkerror|network request failed|load failed/i.test(m)) return 'network problem';
+  if (/jwt|token.*expired|not authenticated/i.test(m)) return 'your session expired: sign in again';
+  return m.replace(/^Saving \w+ failed: /, '').slice(0, 140);
+};
+/** One actionable sentence per affected module. Edits are never discarded on failure. */
+export function describeSaveFailures(failures: SaveFailure[]): string {
+  const byModule = new Map<string, string>();
+  for (const f of failures) if (!byModule.has(MODULE_OF[f.table])) byModule.set(MODULE_OF[f.table], reasonFor(f));
+  const parts = [...byModule].map(([mod, why]) => `${mod} (${why})`);
+  return `Couldn’t save ${parts.join('; ')}. Your edits are kept on this page. Press Retry.`;
+}

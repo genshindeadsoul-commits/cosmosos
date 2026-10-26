@@ -19,7 +19,6 @@ const MODULE_TITLES: Record<ModuleType, string> = {
   tasks: 'Tasks & Calendar',
   settings: 'Settings',
   mail: 'Mail',
-  whatsapp: 'WhatsApp',
   admin: 'Admin',
 };
 
@@ -32,6 +31,8 @@ export const TopBar: React.FC = () => {
     setSearchOpen,
     openQuickCapture,
     saveStatus,
+    saveError,
+    retrySave,
     toggleMusicPlayer,
     musicState,
     userProfile,
@@ -99,12 +100,15 @@ export const TopBar: React.FC = () => {
           <span>Add Task</span>
         </button>
 
-        <span
-          role="status"
-          aria-live="polite"
-          className={`hidden sm:inline text-[11px] ${saveStatus === 'error' ? 'text-rose-600 dark:text-rose-400 font-semibold' : 'text-[#6B7067] dark:text-[#A6AB9F]'}`}
-        >
-          {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'error' ? 'Not saved' : saveStatus === 'saved' ? 'Saved' : ''}
+        <span role="status" aria-live="polite" className="inline-flex items-center gap-1.5 text-[11px]">
+          {saveStatus === 'error' ? (
+            <>
+              <span className="font-semibold text-rose-600 dark:text-rose-400" title={saveError ?? undefined}>Not saved</span>
+              <button onClick={retrySave} title={saveError ?? 'Retry saving'} className="rounded border border-rose-300 dark:border-rose-800 px-1.5 py-0.5 font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Retry</button>
+            </>
+          ) : (
+            <span className="hidden sm:inline text-[#6B7067] dark:text-[#A6AB9F]">{saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : ''}</span>
+          )}
         </span>
 
         {/* Interactive User Workspace Profile Button */}

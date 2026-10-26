@@ -9,6 +9,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { addMonthsKey, todayKey } from '../../lib/dates';
 import { ExpenseCategory, TransactionType } from '../../types';
 
 export const ExpensesView: React.FC = () => {
@@ -35,7 +36,7 @@ export const ExpensesView: React.FC = () => {
   // New Sub Form state
   const [newSubName, setNewSubName] = useState('');
   const [newSubAmt, setNewSubAmt] = useState('');
-  const [newSubRenewal, setNewSubRenewal] = useState('2026-11-01');
+  const [newSubRenewal, setNewSubRenewal] = useState(addMonthsKey(todayKey(), 1));
 
   // Calculations from actual records
   const totalIncome = useMemo(

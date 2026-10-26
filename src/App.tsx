@@ -10,7 +10,6 @@ import { QuickCaptureModal } from './components/common/QuickCaptureModal';
 import { FloatingMusicPlayer } from './components/music/FloatingMusicPlayer';
 import { ProfileModal } from './components/profile/ProfileModal';
 import { MailView } from './features/mail/MailView';
-import { WhatsAppView } from './features/whatsapp/WhatsAppView';
 import { AppleMusicWidget } from './components/music/AppleMusicWidget';
 import { PrefsProvider } from './context/PrefsContext';
 
@@ -59,7 +58,6 @@ const MainContent: React.FC = () => {
       case 'trackers': return <CustomTrackersView />;
       case 'tasks': return <TasksSchedulingView />;
       case 'mail': return <MailView />;
-      case 'whatsapp': return <WhatsAppView />;
       case 'settings': return <SettingsView />;
       case 'admin': return isAdmin ? <AdminView /> : <DashboardView />;
       default: return <DashboardView />;

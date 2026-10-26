@@ -8,6 +8,7 @@ import {
   ArrowDownRight,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { todayKey } from '../../lib/dates';
 
 export const CustomTrackersView: React.FC = () => {
   const {
@@ -25,7 +26,7 @@ export const CustomTrackersView: React.FC = () => {
 
   // New Entry form
   const [entryValue, setEntryValue] = useState('');
-  const [entryDate, setEntryDate] = useState('2026-10-18');
+  const [entryDate, setEntryDate] = useState(todayKey());
   const [entryNotes, setEntryNotes] = useState('');
 
   // New Tracker form

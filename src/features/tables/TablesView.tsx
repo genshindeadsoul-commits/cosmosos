@@ -84,7 +84,7 @@ export const TablesView: React.FC = () => {
         { id: 'status', name: 'Status', type: 'status', options: ['ACTIVE', 'PENDING', 'DONE'] },
       ],
       rows: [
-        { id: `r-${Date.now()}`, index: 1, name: 'Sample Item 1', date: new Date().toISOString().slice(0, 10), status: 'ACTIVE' },
+        { index: 1, name: 'Sample Item 1', date: new Date().toISOString().slice(0, 10), status: 'ACTIVE' },
       ],
     });
     setNewTableName('');

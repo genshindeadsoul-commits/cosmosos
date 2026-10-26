@@ -20,13 +20,14 @@ import {
   Sun,
   Moon,
   Monitor,
-  MessageCircle,
   Sparkles,
   ExternalLink,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useIntegrations } from '../../context/IntegrationsContext';
 import { SheetsImportPanel, HealthTokenPanel } from './IntegrationPanels';
+import { MusicSettingsPanel } from './MusicSettingsPanel';
+import { DriveBackupPanel } from './DriveBackupPanel';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -95,8 +96,6 @@ export const SettingsView: React.FC = () => {
         return Music;
       case 'apple_music':
         return Disc;
-      case 'whatsapp':
-        return MessageCircle;
       default:
         return ShieldCheck;
     }
@@ -239,9 +238,13 @@ export const SettingsView: React.FC = () => {
         )}
       </div>
 
+      <DriveBackupPanel />
+
+      <MusicSettingsPanel />
+
       {/* Integrations Accordion List matching Screenshot 7 */}
       <div className="space-y-3">
-        {integrations.map((item) => {
+        {integrations.filter((i) => i.id !== 'gdrive').map((item) => {
           const Icon = getProviderIcon(item.id);
           const isExpanded = expandedId === item.id;
           const isConnected = item.status === 'connected';
@@ -341,16 +344,6 @@ export const SettingsView: React.FC = () => {
                         >
                           <Mail className="h-3 w-3" />
                           <span>Open Gmail Inbox</span>
-                        </button>
-                      )}
-
-                      {item.id === 'whatsapp' && (
-                        <button
-                          onClick={() => setActiveModule('whatsapp')}
-                          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
-                        >
-                          <MessageCircle className="h-3 w-3" />
-                          <span>Open WhatsApp Dispatch</span>
                         </button>
                       )}
 

@@ -1,12 +1,12 @@
 export type AppleParse =
-  | { ok: true; kind: 'album' | 'playlist'; storefront: string; embedUrl: string; openUrl: string }
+  | { ok: true; kind: 'album' | 'playlist' | 'song'; storefront: string; embedUrl: string; openUrl: string }
   | { ok: false; error: string };
 
 const STORE = /^[a-z]{2}$/;
 const SLUG = /^[A-Za-z0-9%._~-]{1,200}$/;
 const ALBUM_ID = /^\d{5,20}$/;
 const PLAYLIST_ID = /^pl\.[A-Za-z0-9._-]{6,64}$/;
-const UNSUPPORTED = new Set(['artist', 'song', 'station', 'music-video', 'curator', 'radio', 'show', 'episode', 'post', 'room', 'genre']);
+const UNSUPPORTED = new Set(['artist', 'station', 'music-video', 'curator', 'radio', 'show', 'episode', 'post', 'room', 'genre']);
 
 /**
  * Accepts only https://music.apple.com (or embed.music.apple.com) album/playlist links and rebuilds the URL
@@ -23,11 +23,11 @@ export function parseAppleMusicUrl(input: string): AppleParse {
   const [store, type] = seg;
   if (!store || !STORE.test(store)) return { ok: false, error: 'The link is missing its country code (e.g. /us/).' };
   if (UNSUPPORTED.has(type)) return { ok: false, error: `Apple Music ${type} links can’t be embedded here. Use a playlist or album link.` };
-  if (type !== 'album' && type !== 'playlist') return { ok: false, error: 'Only playlist and album links are supported.' };
+  if (type !== 'album' && type !== 'playlist' && type !== 'song') return { ok: false, error: 'Only playlist, album, and song links are supported.' };
   const id = seg[seg.length - 1];
   const slug = seg.length >= 4 ? seg[2] : type;
   if (seg.length < 3 || seg.length > 4) return { ok: false, error: 'This Apple Music link is incomplete.' };
-  if (type === 'album' ? !ALBUM_ID.test(id) : !PLAYLIST_ID.test(id)) return { ok: false, error: `That ${type} link has an unrecognized ID.` };
+  if (type === 'playlist' ? !PLAYLIST_ID.test(id) : !ALBUM_ID.test(id)) return { ok: false, error: `That ${type} link has an unrecognized ID.` };
   let decoded = '';
   try { decoded = decodeURIComponent(slug); } catch { return { ok: false, error: 'The link contains unsupported characters.' }; }
   if (!SLUG.test(slug) || /[<>"'`\\\u0000-\u001f\u007f]/.test(decoded)) return { ok: false, error: 'The link contains unsupported characters.' };

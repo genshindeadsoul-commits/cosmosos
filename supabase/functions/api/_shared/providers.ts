@@ -1,4 +1,4 @@
-export type Provider = 'gmail' | 'google_calendar' | 'google_sheets' | 'spotify';
+export type Provider = 'gmail' | 'google_calendar' | 'google_sheets' | 'google_drive' | 'spotify';
 
 export interface ProviderConfig {
   authUrl: string; tokenUrl: string; scopes: string[]; requiredScope: string;
@@ -22,6 +22,9 @@ export const PROVIDERS: Record<Provider, ProviderConfig> = {
   // Import-only: spreadsheets.readonly lets a pasted spreadsheet URL be read. Export is not implemented.
   google_sheets: { ...GOOGLE, scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly', 'email'],
     requiredScope: 'https://www.googleapis.com/auth/spreadsheets.readonly', verifyUrl: 'https://www.googleapis.com/oauth2/v3/userinfo' },
+  // Backups only: drive.file = access to files THIS app created (never the rest of the user's Drive).
+  google_drive: { ...GOOGLE, scopes: ['https://www.googleapis.com/auth/drive.file', 'email'],
+    requiredScope: 'https://www.googleapis.com/auth/drive.file', verifyUrl: 'https://www.googleapis.com/drive/v3/about?fields=user' },
   spotify: { authUrl: 'https://accounts.spotify.com/authorize', tokenUrl: 'https://accounts.spotify.com/api/token',
     scopes: ['user-read-playback-state', 'user-modify-playback-state'], requiredScope: 'user-modify-playback-state',
     clientIdEnv: 'SPOTIFY_CLIENT_ID', clientSecretEnv: 'SPOTIFY_CLIENT_SECRET', verifyUrl: 'https://api.spotify.com/v1/me', extraAuthParams: { show_dialog: 'true' } },

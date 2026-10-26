@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseAppleMusicUrl, clampBox } from '../src/lib/appleEmbed.ts';
+import { parseMusicLink } from '../src/lib/musicLinks.ts';
+import { addPlaylist, libraryFrom, activeFrom, enabledPlaylists, movePlaylist, removePlaylist, renamePlaylist, togglePlaylist, MAX_PLAYLISTS, type PlaylistItem } from '../src/lib/playlists.ts';
 import { sanitizeFilename, base64UrlToBlob, mergeUnique, replySubject, senderAddress, senderName, quoteForReply, formatBytes, isFolderId, FOLDERS } from '../src/lib/mail.ts';
 
 const ok = (u: string) => { const r = parseAppleMusicUrl(u); assert.ok(r.ok, u); return r as Extract<typeof r, { ok: true }>; };
@@ -23,7 +25,7 @@ test('apple: rejects other hosts, lookalikes, non-https, bad types, and malforme
   assert.match(bad('http://music.apple.com/us/album/x/1528112358'), /https/);
   for (const h of ['https://evil.com/us/album/x/1528112358', 'https://music.apple.com.evil.com/us/album/x/1528112358', 'https://xmusic.apple.com/us/album/x/1528112358', 'https://music.apple.com@evil.com/us/album/x/1528112358', 'https://apple.com/us/album/x/1528112358']) assert.match(bad(h), /music\.apple\.com/);
   assert.match(bad('https://music.apple.com/us/artist/taylor-swift/159260351'), /artist/);
-  assert.match(bad('https://music.apple.com/us/song/x/1528112363'), /song/);
+  assert.equal(ok('https://music.apple.com/us/song/x/1528112363').kind, 'song');          // single tracks are supported
   assert.match(bad('https://music.apple.com/us/station/x/ra.123'), /station/);
   assert.match(bad('https://music.apple.com/us/album/x/notanumber'), /unrecognized ID/);
   assert.match(bad('https://music.apple.com/us/playlist/x/12345'), /unrecognized ID/);
@@ -77,4 +79,74 @@ test('mail: folder list is exactly the seven required, and ids are validated', (
 test('apple: percent-encoded Unicode slugs from real links are allowed; encoded markup/quotes are not', () => {
   assert.ok(ok('https://music.apple.com/jp/album/%E3%83%86%E3%82%B9%E3%83%88/1528112358').embedUrl.includes('%E3%83%86'));
   for (const slug of ['%3Cscript%3E', '%22onload%3D', '%27x', '%5Cx', '%00x', '%E0%A4%A']) assert.match(bad(`https://music.apple.com/us/album/${slug}/1528112358`), /unsupported characters/);
+});
+
+
+const SP = '37i9dQZF1DXcBWIGoYBM5M';
+test('music links: provider is identified and the official embed URL is rebuilt from validated parts', () => {
+  const a = parseMusicLink('https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb');
+  assert.ok(a.ok && a.provider === 'apple' && a.kind === 'playlist' && a.embedUrl.startsWith('https://embed.music.apple.com/'));
+  const t = parseMusicLink('https://music.apple.com/us/song/x/1528112363'); assert.ok(t.ok && t.kind === 'track');
+  for (const u of [`https://open.spotify.com/playlist/${SP}`, `https://open.spotify.com/intl-in/playlist/${SP}?si=abc&utm=x`, `spotify:playlist:${SP}`, `https://open.spotify.com/embed/playlist/${SP}`]) {
+    const r = parseMusicLink(u);
+    assert.ok(r.ok && r.provider === 'spotify' && r.kind === 'playlist', u);
+    assert.equal((r as any).embedUrl, `https://open.spotify.com/embed/playlist/${SP}`);
+    assert.ok(!(r as any).embedUrl.includes('si=') && !(r as any).openUrl.includes('utm'));
+  }
+  const album = parseMusicLink(`https://open.spotify.com/album/${SP}`); assert.ok(album.ok && album.kind === 'album');
+  const track = parseMusicLink(`https://open.spotify.com/track/${SP}`); assert.ok(track.ok && track.kind === 'track');
+});
+test('music links: unsupported or hostile input is refused with a specific explanation', () => {
+  const err = (u: string) => { const r = parseMusicLink(u); assert.equal(r.ok, false, u); return (r as { error: string }).error; };
+  assert.match(err(''), /Paste/);
+  assert.match(err('not a url'), /link/);
+  assert.match(err('https://www.youtube.com/playlist?list=PLabc'), /aren’t supported/);
+  assert.match(err('https://soundcloud.com/a/sets/b'), /aren’t supported/);
+  assert.match(err('https://example.com/playlist/abc'), /Apple Music .* Spotify/);
+  assert.match(err('http://open.spotify.com/playlist/' + SP), /https/);
+  assert.match(err('https://open.spotify.com.evil.com/playlist/' + SP), /Apple Music .* Spotify|open\.spotify\.com/);
+  assert.match(err('https://spotify.link/abc123'), /Short Spotify links/);
+  assert.match(err(`https://open.spotify.com/artist/${SP}`), /artist links can’t be played/);
+  assert.match(err(`https://open.spotify.com/show/${SP}`), /show links/);
+  assert.match(err('https://open.spotify.com/playlist/short'), /unrecognized ID/);
+  assert.match(err(`https://open.spotify.com/playlist/${SP}<script>`), /unrecognized ID/);
+  assert.match(err('spotify:playlist:bad id'), /link|Apple|Spotify/);
+  assert.match(err('javascript:alert(1)'), /https|link|Apple/);
+});
+
+const mk = (n: string, over: Partial<PlaylistItem> = {}): PlaylistItem => ({ id: n, name: n, provider: 'spotify', kind: 'playlist', openUrl: `https://open.spotify.com/playlist/${n}`, embedUrl: '', enabled: true, ...over });
+test('playlist library: add validates, names default sensibly, duplicates and the cap are enforced', () => {
+  let lib: PlaylistItem[] = [];
+  const bad = addPlaylist(lib, 'https://youtube.com/x', '', 'id1'); assert.equal(bad.ok, false);
+  const r = addPlaylist(lib, `https://open.spotify.com/playlist/${SP}`, '  Focus\u0007  ', 'id1'); assert.ok(r.ok); lib = (r as any).lib;
+  assert.equal(lib[0].name, 'Focus'); assert.equal(lib[0].enabled, true);
+  const dup = addPlaylist(lib, `https://open.spotify.com/intl-in/playlist/${SP}?si=zz`, 'Again', 'id2');
+  assert.equal(dup.ok, false); assert.match((dup as any).error, /Already in your list as “Focus”/);
+  const unnamed = addPlaylist(lib, 'https://music.apple.com/gb/album/folklore/1528112358', '', 'id3'); assert.ok(unnamed.ok); assert.equal((unnamed as any).item.name, 'Apple Music album');
+  const full = Array.from({ length: MAX_PLAYLISTS }, (_, i) => mk(`p${i}`));
+  assert.match((addPlaylist(full, `https://open.spotify.com/playlist/${SP}`, '', 'x') as any).error, /up to 50/);
+});
+test('playlist library: rename, enable/disable, reorder and remove behave and never mutate the input', () => {
+  const lib = [mk('a'), mk('b'), mk('c')]; const copy = JSON.stringify(lib);
+  assert.deepEqual(movePlaylist(lib, 'c', -1).map((p) => p.id), ['a', 'c', 'b']);
+  assert.deepEqual(movePlaylist(lib, 'a', -1).map((p) => p.id), ['a', 'b', 'c']);          // already first
+  assert.deepEqual(movePlaylist(lib, 'c', 1).map((p) => p.id), ['a', 'b', 'c']);           // already last
+  assert.deepEqual(movePlaylist(lib, 'zzz', 1), lib);
+  assert.equal(renamePlaylist(lib, 'b', ' New ')[1].name, 'New');
+  assert.equal(renamePlaylist(lib, 'b', '   ')[1].name, 'b');                               // blank rename ignored
+  assert.equal(togglePlaylist(lib, 'a')[0].enabled, false);
+  assert.deepEqual(removePlaylist(lib, 'b').map((p) => p.id), ['a', 'c']);
+  assert.equal(JSON.stringify(lib), copy);
+});
+test('only ENABLED playlists are playable; the active one falls back sensibly; the old single-link setting is migrated', () => {
+  const lib = [mk('a', { enabled: false }), mk('b'), mk('c')];
+  assert.deepEqual(enabledPlaylists(lib).map((p) => p.id), ['b', 'c']);
+  assert.equal(activeFrom({ playlists: lib, activePlaylistId: 'c' })!.id, 'c');
+  assert.equal(activeFrom({ playlists: lib, activePlaylistId: 'a' })!.id, 'b');            // disabled -> first enabled
+  assert.equal(activeFrom({ playlists: lib })!.id, 'b');
+  assert.equal(activeFrom({ playlists: [mk('a', { enabled: false })] }), null);            // nothing enabled -> nothing shown
+  assert.equal(activeFrom({}), null);                                                      // nothing is auto-discovered
+  const migrated = libraryFrom({ appleMusic: { url: 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb' } });
+  assert.equal(migrated.length, 1); assert.equal(migrated[0].enabled, true); assert.equal(migrated[0].provider, 'apple');
+  assert.deepEqual(libraryFrom({ playlists: [], appleMusic: { url: 'https://music.apple.com/us/album/x/1528112358' } }), []);   // an explicit empty list wins over legacy
 });

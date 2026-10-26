@@ -47,12 +47,12 @@ export async function getAccessToken(userId: string, provider: Provider, ctx: Ct
 
 export { requireEnv };
 
-/** Call a provider API; translate auth/rate failures into stable errors the UI can show. */
-export async function providerFetch(userId: string, provider: Provider, url: string, token: string, ctx: Ctx, init?: { method?: string; json?: unknown }): Promise<any> {
+/** Call a provider API and return the raw Response; auth/rate failures become stable errors the UI can show. */
+export async function providerRequest(userId: string, provider: Provider, url: string, token: string, ctx: Ctx, init?: { method?: string; json?: unknown; body?: BodyInit; headers?: Record<string, string> }): Promise<Response> {
   const res = await ctx.fetch(url, {
     method: init?.method ?? 'GET',
-    headers: { Authorization: `Bearer ${token}`, ...(init?.json !== undefined ? { 'Content-Type': 'application/json' } : {}) },
-    ...(init?.json !== undefined ? { body: JSON.stringify(init.json) } : {}),
+    headers: { Authorization: `Bearer ${token}`, ...(init?.json !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(init?.headers ?? {}) },
+    ...(init?.json !== undefined ? { body: JSON.stringify(init.json) } : init?.body !== undefined ? { body: init.body } : {}),
   });
   if (res.status === 401) {
     await ctx.db.saveConnection(userId, provider, { status: 'needs_reauthorization', last_error: 'Provider rejected the access token.' });
@@ -66,6 +66,11 @@ export async function providerFetch(userId: string, provider: Provider, url: str
     }
     throw new HttpError(403, 'forbidden', 'The provider denied this request (permission or account restriction).');
   }
+  if (res.status === 404) throw new HttpError(404, 'not_found', `${provider} could not find that item.`);
   if (!res.ok) throw new HttpError(502, 'provider_error', `${provider} returned ${res.status}.`);
-  return res.json();
+  return res;
+}
+
+export async function providerFetch(userId: string, provider: Provider, url: string, token: string, ctx: Ctx, init?: { method?: string; json?: unknown }): Promise<any> {
+  return (await providerRequest(userId, provider, url, token, ctx, init)).json();
 }
