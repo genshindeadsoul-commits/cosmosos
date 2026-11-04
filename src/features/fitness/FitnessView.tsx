@@ -11,11 +11,14 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dayKey, daysInMonth, leadingBlanks, monthLabel, todayKey } from '../../lib/dates';
+import { DayDetailsModal } from '../../components/calendar/DayDetailsModal';
 
 export const FitnessView: React.FC = () => {
   const { workouts, addWorkout, deleteWorkout } = useApp();
 
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [isDayDetailsOpen, setIsDayDetailsOpen] = useState(false);
+  const [modalDateKey, setModalDateKey] = useState<string>(() => todayKey());
   const [view, setView] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(new Date().getDate());
 
@@ -123,15 +126,20 @@ export const FitnessView: React.FC = () => {
           ))}
 
           {Array.from({ length: daysInMonth(view.y, view.m) }, (_, i) => i + 1).map((day) => {
-            const hasWorkout = workoutDays.has(dayKey(view.y, view.m, day));
-            const isToday = dayKey(view.y, view.m, day) === todayKey();
+            const key = dayKey(view.y, view.m, day);
+            const hasWorkout = workoutDays.has(key);
+            const isToday = key === todayKey();
             const isSelected = day === selectedCalendarDay;
 
             return (
               <button
                 key={day}
-                onClick={() => setSelectedCalendarDay(day)}
-                className={`relative flex flex-col items-center justify-between p-1.5 sm:p-2 h-14 sm:h-16 rounded-xl border transition-colors ${
+                onClick={() => {
+                  setSelectedCalendarDay(day);
+                  setModalDateKey(key);
+                  setIsDayDetailsOpen(true);
+                }}
+                className={`relative flex flex-col items-center justify-between p-1.5 sm:p-2 h-12 sm:h-16 rounded-xl border transition-colors ${
                   isToday
                     ? 'border-[#252821] dark:border-[#ECEDE6] ring-1 ring-[#252821]'
                     : isSelected
@@ -175,72 +183,95 @@ export const FitnessView: React.FC = () => {
           Recent Logs
         </h2>
 
-        <div className="space-y-3">
-          {workouts.map((w) => (
-            <div
-              key={w.id}
-              className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/40 dark:bg-[#181A17]/40 p-4 space-y-2.5 transition-colors group"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
-                    {w.title}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs text-[#6B7067] dark:text-[#A6AB9F] pt-0.5">
-                    <span>{w.date}</span>
-                    <span>·</span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {w.durationMinutes == null ? '—' : `${w.durationMinutes} mins`}
-                    </span>
-                    <span>·</span>
-                    <span className="flex items-center gap-1">
-                      <Flame className="h-3 w-3 text-orange-500" />
-                      {w.calories == null ? '—' : `${w.calories} kcal`}
-                    </span>
-                    {(w.source === 'health_connect' || Boolean(w.externalId)) && (
-                      <>
-                        <span>·</span>
-                        <span className="inline-flex items-center gap-1 rounded bg-[#3D5240]/10 text-[#3D5240] dark:bg-[#A8BDA1]/20 dark:text-[#A8BDA1] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
-                          Imported
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => deleteWorkout(w.id)}
-                  aria-label="Delete workout log"
-                  className="p-1 text-[#8A8E85] hover:text-rose-500 opacity-60 hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Exercise Badges / Chips */}
-              {(w.exercises ?? []).length > 0 && (
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {w.exercises.map((ex, idx) => (
-                    <span
-                      key={idx}
-                      className="rounded-md border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] px-2.5 py-1 text-xs font-mono font-semibold text-[#252821] dark:text-[#ECEDE6]"
-                    >
-                      {ex.name}: {ex.setsReps}
-                      {ex.weightLbs !== undefined ? ` @ ${ex.weightLbs}lbs` : ''}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {w.notes && (
-                <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F] italic pt-1">
-                  "{w.notes}"
-                </p>
-              )}
+        {workouts.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-[#DFE1D9] dark:border-[#383D35] p-8 text-center space-y-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8EEE6] dark:bg-[#303B2E] text-[#3D5240] dark:text-[#A8BDA1] mx-auto">
+              <Dumbbell className="h-6 w-6" />
             </div>
-          ))}
-        </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
+                No workouts recorded yet
+              </h3>
+              <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F] max-w-sm mx-auto pt-1">
+                Log your strength sessions, cardio workouts, or sync automatically with Health Connect.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsLogModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#3D5240] hover:bg-[#2E3F31] dark:bg-[#526B55] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Log First Workout</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {workouts.map((w) => (
+              <div
+                key={w.id}
+                className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/40 dark:bg-[#181A17]/40 p-4 space-y-2.5 transition-colors group"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
+                      {w.title}
+                    </h3>
+                    <div className="flex items-center gap-2 text-xs text-[#6B7067] dark:text-[#A6AB9F] pt-0.5">
+                      <span>{w.date}</span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {w.durationMinutes == null ? '—' : `${w.durationMinutes} mins`}
+                      </span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <Flame className="h-3 w-3 text-orange-500" />
+                        {w.calories == null ? '—' : `${w.calories} kcal`}
+                      </span>
+                      {(w.source === 'health_connect' || Boolean(w.externalId)) && (
+                        <>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-1 rounded bg-[#3D5240]/10 text-[#3D5240] dark:bg-[#A8BDA1]/20 dark:text-[#A8BDA1] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                            Imported
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => deleteWorkout(w.id)}
+                    aria-label="Delete workout log"
+                    className="p-1 text-[#8A8E85] hover:text-rose-500 opacity-60 hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Exercise Badges / Chips */}
+                {(w.exercises ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {w.exercises.map((ex, idx) => (
+                      <span
+                        key={idx}
+                        className="rounded-md border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] px-2.5 py-1 text-xs font-mono font-semibold text-[#252821] dark:text-[#ECEDE6]"
+                      >
+                        {ex.name}: {ex.setsReps}
+                        {ex.weightLbs !== undefined ? ` @ ${ex.weightLbs}lbs` : ''}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {w.notes && (
+                  <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F] italic pt-1">
+                    "{w.notes}"
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Log Workout Modal */}
@@ -380,6 +411,21 @@ export const FitnessView: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Universal Calendar Day Details Modal */}
+      {isDayDetailsOpen && (
+        <DayDetailsModal
+          dateKey={modalDateKey}
+          initialTab="workout"
+          onDateChange={(d) => {
+            setModalDateKey(d);
+            const [y, m, day] = d.split('-').map(Number);
+            setView({ y, m: m - 1 });
+            setSelectedCalendarDay(day);
+          }}
+          onClose={() => setIsDayDetailsOpen(false)}
+        />
       )}
     </div>
   );

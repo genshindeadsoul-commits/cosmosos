@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { toRows, fromRows, planChanges, CosmosAppData, EMPTY_DATA, newId } from '../src/data/cloudData.ts';
 import { sanitizeSettings } from '../src/data/backup.ts';
+import { shiftDayKey, formatReadableDate } from '../src/lib/dates.ts';
 
 test('custom transaction title: title is serialized and roundtripped through toRows and fromRows', () => {
   const txId = newId();
@@ -111,6 +112,8 @@ test('backup settings sanitize monthlyBudgets and dashboardGrid correctly', () =
       autoAdapt: true,
       extraJunk: 123,      // should be dropped
     },
+    preferredCalendarTab: 'workout',
+    lastSelectedDate: '2026-11-05',
   });
 
   assert.deepEqual(sanitized.monthlyBudgets, {
@@ -122,4 +125,77 @@ test('backup settings sanitize monthlyBudgets and dashboardGrid correctly', () =
     mode: '2-col',
     autoAdapt: true,
   });
+
+  assert.equal(sanitized.preferredCalendarTab, 'workout');
+  assert.equal(sanitized.lastSelectedDate, '2026-11-05');
 });
+
+test('backup settings automatically maps legacy 3-col grid mode to 2-col', () => {
+  const sanitized = sanitizeSettings({
+    dashboardGrid: {
+      mode: '3-col',
+      autoAdapt: true,
+    },
+  });
+
+  assert.deepEqual(sanitized.dashboardGrid, {
+    mode: '2-col',
+    autoAdapt: true,
+  });
+});
+
+test('dates utility: shiftDayKey shifts dates across months and years accurately in UTC', () => {
+  assert.equal(shiftDayKey('2026-11-05', 1), '2026-11-06');
+  assert.equal(shiftDayKey('2026-11-05', -1), '2026-11-04');
+  assert.equal(shiftDayKey('2026-11-30', 1), '2026-12-01');
+  assert.equal(shiftDayKey('2026-12-31', 1), '2027-01-01');
+  assert.equal(shiftDayKey('2026-01-01', -1), '2025-12-31');
+
+  // Verify formatReadableDate returns consistent output without crashing
+  const formatted = formatReadableDate('2026-11-05');
+  assert.ok(formatted.includes('Nov 5, 2026') || formatted.includes('5 Nov 2026') || formatted.includes('Nov'));
+});
+
+test('cross-module calendar aggregation: aggregates dated tasks, notes, workouts, and transactions without duplication', () => {
+  const targetDate = '2026-11-05';
+  const now = new Date().toISOString();
+  const data: CosmosAppData = {
+    ...EMPTY_DATA,
+    tasks: [
+      { id: newId(), title: 'Task on target date', list: 'Work', priority: 'HIGH', status: 'todo', dueDate: targetDate, createdAt: now },
+      { id: newId(), title: 'Task on other date', list: 'Personal', priority: 'LOW', status: 'todo', dueDate: '2026-11-06', createdAt: now },
+    ],
+    notes: [
+      { id: newId(), title: 'Note on target date', content: 'Discussion notes', excerpt: 'Discussion', tags: ['Daily'], noteDate: targetDate, createdAt: now, updatedAt: now },
+      { id: newId(), title: 'General note without date', content: 'Ideas', excerpt: 'Ideas', tags: ['Inbox'], createdAt: now, updatedAt: now },
+    ],
+    workouts: [
+      { id: newId(), title: 'Chest and Core', date: targetDate, durationMinutes: 50, calories: 420, exercises: [{ name: 'Bench Press', setsReps: '4x8' }] },
+      { id: newId(), title: 'Cardio day', date: '2026-11-04', durationMinutes: 30, calories: 250, exercises: [] },
+    ],
+    transactions: [
+      { id: newId(), type: 'expense', category: 'Groceries', title: 'Market visit', description: 'Fresh veggies', amount: 450, date: targetDate },
+      { id: newId(), type: 'income', category: 'Freelance', title: 'Project bonus', description: 'Milestone 2', amount: 5000, date: targetDate },
+      { id: newId(), type: 'expense', category: 'Dining', title: 'Coffee', description: 'Latte', amount: 150, date: '2026-11-06' },
+    ],
+    habits: [
+      { id: newId(), name: 'Morning Meditation', category: 'Health & Wellness', streak: 4, checkins: { [targetDate]: true } },
+    ],
+  };
+
+  const tasksForDay = data.tasks.filter((t) => t.dueDate === targetDate);
+  const notesForDay = data.notes.filter((n) => n.noteDate === targetDate);
+  const workoutsForDay = data.workouts.filter((w) => w.date === targetDate);
+  const txForDay = data.transactions.filter((t) => t.date === targetDate);
+  const dayIncome = txForDay.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const dayExpense = txForDay.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+
+  assert.equal(tasksForDay.length, 1);
+  assert.equal(notesForDay.length, 1);
+  assert.equal(workoutsForDay.length, 1);
+  assert.equal(txForDay.length, 2);
+  assert.equal(dayIncome, 5000);
+  assert.equal(dayExpense, 450);
+  assert.equal(data.habits[0].checkins[targetDate], true);
+});
+

@@ -465,8 +465,8 @@ export const ExpensesView: React.FC = () => {
           </div>
         </div>
 
-        {/* Responsive Table */}
-        <div className="overflow-x-auto">
+        {/* Desktop View: Responsive Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/60 dark:bg-[#181A17]/60 text-[#6B7067] dark:text-[#A6AB9F] font-bold">
@@ -543,6 +543,75 @@ export const ExpensesView: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile View: Structured Transaction Cards */}
+        <div className="md:hidden divide-y divide-[#DFE1D9] dark:divide-[#383D35]">
+          {filteredTransactions.length === 0 ? (
+            <div className="py-8 text-center text-xs text-[#8A8E85]">
+              No transactions found for this period.
+            </div>
+          ) : (
+            filteredTransactions.map((tx) => {
+              const displayTitle = tx.title || tx.description || tx.category;
+              const displayDesc = tx.title && tx.description ? tx.description : tx.notes || '';
+              return (
+                <div
+                  key={tx.id}
+                  className="p-4 space-y-2 hover:bg-[#F5F5F0]/50 dark:hover:bg-[#292D27]/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-xs text-[#252821] dark:text-[#ECEDE6] truncate">
+                          {displayTitle}
+                        </span>
+                        <span className="shrink-0 rounded bg-[#F0F1EB] dark:bg-[#292D27] px-2 py-0.5 text-[10px] font-semibold text-[#6B7067] dark:text-[#A6AB9F]">
+                          {tx.category}
+                        </span>
+                      </div>
+                      {displayDesc && (
+                        <p className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F] pt-0.5 line-clamp-2">
+                          {displayDesc}
+                        </p>
+                      )}
+                    </div>
+                    <div
+                      className={`font-mono font-bold text-sm shrink-0 whitespace-nowrap ${
+                        tx.type === 'income'
+                          ? 'text-[#477653] dark:text-[#91B594]'
+                          : 'text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {tx.type === 'income' ? '+' : '-'}₹{tx.amount.toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-[#DFE1D9]/40 dark:border-[#383D35]/40 text-xs text-[#8A8E85]">
+                    <span className="font-mono text-[11px]">
+                      {tx.date} {tx.time || ''}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEditTx(tx)}
+                        aria-label={`Edit ${displayTitle}`}
+                        className="flex items-center justify-center min-w-[36px] min-h-[36px] p-2 text-[#8A8E85] hover:text-[#252821] dark:hover:text-[#ECEDE6] rounded-lg hover:bg-[#ECEDE7] dark:hover:bg-[#292D27] transition-colors"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => deleteTransaction(tx.id)}
+                        aria-label={`Delete ${displayTitle}`}
+                        className="flex items-center justify-center min-w-[36px] min-h-[36px] p-2 text-[#8A8E85] hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
 

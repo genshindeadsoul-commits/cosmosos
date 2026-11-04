@@ -21,3 +21,22 @@ export const dateNoteContent = (dateKey: string) => `# Notes for ${dateKey}\n\n`
 export const isUntouchedDateNote = (note: { title: string; content: string }, dateKey: string) =>
   note.title === dateNoteTitle(dateKey) &&
   (!note.content || note.content.trim() === '' || note.content.trim() === dateNoteContent(dateKey).trim());
+
+export const shiftDayKey = (key: string, deltaDays: number): string => {
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+};
+
+export const formatReadableDate = (key: string): string => {
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+};
+

@@ -3,15 +3,17 @@ import { requireSupabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import type { PlaylistItem } from '../lib/playlists';
 
-export type DashboardGridMode = '1-col' | '2-col' | '3-col' | 'auto';
+export type DashboardGridMode = '1-col' | '2-col' | 'auto';
 export interface DashboardGridPrefs {
   mode: DashboardGridMode;
-  autoAdapt: boolean;
+  autoAdapt?: boolean;
 }
 export const DEFAULT_DASHBOARD_GRID: DashboardGridPrefs = {
   mode: 'auto',
   autoAdapt: true,
 };
+
+export type CalendarTab = 'overview' | 'tasks' | 'notes' | 'workout' | 'expenses';
 
 export interface AppleMusicPrefs { url: string | null; x: number; y: number; w: number; h: number; mode: 'compact' | 'expanded' | 'minimized'; visible: boolean }
 export interface Prefs {
@@ -21,6 +23,8 @@ export interface Prefs {
   activePlaylistId?: string;
   monthlyBudgets?: Record<string, number>;
   dashboardGrid?: DashboardGridPrefs;
+  preferredCalendarTab?: CalendarTab;
+  lastSelectedDate?: string;
 }
 
 interface PrefsContextType {
@@ -29,6 +33,8 @@ interface PrefsContextType {
   update: (patch: Prefs) => void;
   setMonthlyBudget: (monthKey: string, amount: number) => void;
   setDashboardGrid: (grid: Partial<DashboardGridPrefs>) => void;
+  setPreferredCalendarTab: (tab: CalendarTab) => void;
+  setLastSelectedDate: (date: string) => void;
 }
 const Ctx = createContext<PrefsContextType | undefined>(undefined);
 
@@ -88,9 +94,31 @@ export const PrefsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, [update]);
 
+  const setPreferredCalendarTab = useCallback((tab: CalendarTab) => {
+    update({ preferredCalendarTab: tab });
+  }, [update]);
+
+  const setLastSelectedDate = useCallback((date: string) => {
+    update({ lastSelectedDate: date });
+  }, [update]);
+
   useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); void save(); } }, [save]);   // flush on unmount
 
-  return <Ctx.Provider value={{ prefs, loaded, update, setMonthlyBudget, setDashboardGrid }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider
+      value={{
+        prefs,
+        loaded,
+        update,
+        setMonthlyBudget,
+        setDashboardGrid,
+        setPreferredCalendarTab,
+        setLastSelectedDate,
+      }}
+    >
+      {children}
+    </Ctx.Provider>
+  );
 };
 
 export function usePrefs(): PrefsContextType {

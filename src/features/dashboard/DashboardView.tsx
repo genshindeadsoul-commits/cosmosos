@@ -19,9 +19,10 @@ import {
   Minus,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { usePrefs, DEFAULT_DASHBOARD_GRID } from '../../context/PrefsContext';
+import { usePrefs, DEFAULT_DASHBOARD_GRID, CalendarTab } from '../../context/PrefsContext';
 import { dayKey, daysInMonth, leadingBlanks, monthLabel, shiftMonth, todayKey } from '../../lib/dates';
 import { TaskListType } from '../../types';
+import { DayDetailsModal } from '../../components/calendar/DayDetailsModal';
 
 export const DashboardView: React.FC = () => {
   const {
@@ -50,40 +51,39 @@ export const DashboardView: React.FC = () => {
 
   const { prefs } = usePrefs();
   const gridPrefs = prefs.dashboardGrid ?? DEFAULT_DASHBOARD_GRID;
-  const { mode, autoAdapt } = gridPrefs;
+  const { mode } = gridPrefs;
 
   const mainGridCols = useMemo(() => {
-    if (mode === '1-col') return 'grid grid-cols-1 gap-5';
-    if (mode === '2-col') return autoAdapt ? 'grid grid-cols-1 md:grid-cols-2 gap-5' : 'grid grid-cols-2 gap-5';
-    if (mode === '3-col') return autoAdapt ? 'grid grid-cols-1 md:grid-cols-3 gap-5' : 'grid grid-cols-3 gap-5';
-    return 'grid grid-cols-1 lg:grid-cols-12 gap-5';
-  }, [mode, autoAdapt]);
+    if (mode === '1-col') return 'grid grid-cols-1 gap-5 w-full';
+    if (mode === '2-col') return 'grid grid-cols-1 md:grid-cols-2 gap-5 w-full';
+    // Auto / Adaptive: 1 column on mobile, 2 balanced columns on desktop
+    return 'grid grid-cols-1 lg:grid-cols-2 gap-5 w-full';
+  }, [mode]);
 
   const tasksColSpan = useMemo(() => {
-    if (mode === '1-col') return 'col-span-1 space-y-5';
-    if (mode === '2-col') return 'col-span-1 space-y-5';
-    if (mode === '3-col') return 'md:col-span-2 col-span-1 space-y-5';
-    return 'lg:col-span-7 space-y-5';
-  }, [mode]);
+    return 'col-span-1 space-y-5 w-full min-w-0';
+  }, []);
 
   const sideColSpan = useMemo(() => {
-    if (mode === '1-col') return 'col-span-1 space-y-5';
-    if (mode === '2-col') return 'col-span-1 space-y-5';
-    if (mode === '3-col') return 'md:col-span-1 col-span-1 space-y-5';
-    return 'lg:col-span-5 space-y-5';
-  }, [mode]);
+    return 'col-span-1 space-y-5 w-full min-w-0';
+  }, []);
 
   const bottomGridCols = useMemo(() => {
-    if (mode === '1-col') return 'grid grid-cols-1 gap-4';
-    if (mode === '2-col') return autoAdapt ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : 'grid grid-cols-2 gap-4';
-    if (mode === '3-col') return autoAdapt ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid grid-cols-3 gap-4';
-    return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4';
-  }, [mode, autoAdapt]);
+    if (mode === '1-col') return 'grid grid-cols-1 gap-4 w-full';
+    if (mode === '2-col') return 'grid grid-cols-1 md:grid-cols-2 gap-4 w-full';
+    // Auto / Adaptive: 1 col on mobile, 2 on tablet/laptop, 4 on xl
+    return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4 gap-4 w-full';
+  }, [mode]);
 
   const [quickTitle, setQuickTitle] = useState('');
   const [selectedQuickList, setSelectedQuickList] = useState<TaskListType>('Work');
   const [view, setView] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(new Date().getDate());
+
+  // Interactive Day Details Modal State
+  const [isDayDetailsOpen, setIsDayDetailsOpen] = useState(false);
+  const [modalDateKey, setModalDateKey] = useState<string>(() => prefs.lastSelectedDate ?? todayKey());
+  const [modalInitialTab, setModalInitialTab] = useState<CalendarTab | undefined>(undefined);
 
   const selectedDayKey = dayKey(view.y, view.m, selectedCalendarDay);
   const dayNotes = notes.filter((n) => n.noteDate === selectedDayKey);
@@ -333,22 +333,29 @@ export const DashboardView: React.FC = () => {
             </div>
 
             {/* Days of week */}
-            <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-[#8A8E85] pb-2">
-              <span>Mon</span>
-              <span>Tue</span>
-              <span>Wed</span>
-              <span>Thu</span>
-              <span>Fri</span>
-              <span>Sat</span>
-              <span>Sun</span>
+            <div className="grid grid-cols-7 text-center text-[10px] sm:text-[11px] font-semibold text-[#8A8E85] pb-2">
+              <span className="truncate min-w-0"><span className="hidden sm:inline">Mon</span><span className="sm:hidden">M</span></span>
+              <span className="truncate min-w-0"><span className="hidden sm:inline">Tue</span><span className="sm:hidden">T</span></span>
+              <span className="truncate min-w-0"><span className="hidden sm:inline">Wed</span><span className="sm:hidden">W</span></span>
+              <span className="truncate min-w-0"><span className="hidden sm:inline">Thu</span><span className="sm:hidden">T</span></span>
+              <span className="truncate min-w-0"><span className="hidden sm:inline">Fri</span><span className="sm:hidden">F</span></span>
+              <span className="truncate min-w-0"><span className="hidden sm:inline">Sat</span><span className="sm:hidden">S</span></span>
+              <span className="truncate min-w-0"><span className="hidden sm:inline">Sun</span><span className="sm:hidden">S</span></span>
             </div>
 
             {/* Real calendar for the viewed month. Dots mark days that actually have a task due or an event. */}
-            <div className="grid grid-cols-7 gap-1 text-center text-xs">
+            <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center text-xs w-full">
               {Array.from({ length: leadingBlanks(view.y, view.m, 1) }, (_, i) => {
                 const prev = shiftMonth(view.y, view.m, -1);
                 const n = daysInMonth(prev.y, prev.m) - leadingBlanks(view.y, view.m, 1) + i + 1;
-                return <span key={`p${i}`} className="py-1.5 text-[#C9CDC2] dark:text-[#4A5046]">{n}</span>;
+                return (
+                  <span
+                    key={`p${i}`}
+                    className="flex items-center justify-center p-1 sm:p-1.5 text-xs text-[#C9CDC2] dark:text-[#4A5046] min-w-0 w-full aspect-square"
+                  >
+                    {n}
+                  </span>
+                );
               })}
               {Array.from({ length: daysInMonth(view.y, view.m) }, (_, i) => i + 1).map((day) => {
                 const key = dayKey(view.y, view.m, day);
@@ -358,10 +365,15 @@ export const DashboardView: React.FC = () => {
                 return (
                   <button
                     key={day}
-                    onClick={() => setSelectedCalendarDay(day)}
+                    onClick={() => {
+                      setSelectedCalendarDay(day);
+                      setModalDateKey(key);
+                      setModalInitialTab('overview');
+                      setIsDayDetailsOpen(true);
+                    }}
                     aria-label={`${key}${hasDot ? ', has items' : ''}`}
                     aria-current={isToday ? 'date' : undefined}
-                    className={`relative flex flex-col items-center justify-center py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    className={`relative flex flex-col items-center justify-center p-1 sm:p-1.5 rounded-lg text-xs font-semibold transition-colors min-w-0 w-full aspect-square ${
                       isSelected
                         ? 'bg-[#3D5240] dark:bg-[#526B55] text-white shadow-xs'
                         : isToday
@@ -381,9 +393,18 @@ export const DashboardView: React.FC = () => {
             {/* Selected day notes region */}
             <div className="mt-3 border-t border-[#DFE1D9] dark:border-[#383D35] pt-3 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#252821] dark:text-[#ECEDE6]">
-                  Notes for {selectedDayKey}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalDateKey(selectedDayKey);
+                    setModalInitialTab('overview');
+                    setIsDayDetailsOpen(true);
+                  }}
+                  className="text-xs font-bold text-[#252821] dark:text-[#ECEDE6] hover:underline flex items-center gap-1"
+                >
+                  <span>Day Details ({selectedDayKey})</span>
+                  <ArrowUpRight className="h-3 w-3 text-[#526B55] dark:text-[#A8BDA1]" />
+                </button>
                 <button
                   onClick={() => {
                     const n = addDateNote(selectedDayKey);
@@ -398,7 +419,7 @@ export const DashboardView: React.FC = () => {
               </div>
 
               {dayNotes.length === 0 ? (
-                <p className="text-[11px] text-[#8A8E85]">No notes for this date.</p>
+                <p className="text-[11px] text-[#8A8E85]">No notes for this date. Click to view day schedule & notes.</p>
               ) : (
                 <div className="space-y-1.5">
                   {dayNotes.map((n) => (
@@ -441,7 +462,7 @@ export const DashboardView: React.FC = () => {
             </div>
 
             {/* Timer Counter */}
-            <div className="flex items-center justify-center gap-4 py-4">
+            <div className="flex items-center justify-center gap-2 sm:gap-4 py-4">
               <button
                 onClick={() => {
                   if (focusDurationMins > 5) {
@@ -450,12 +471,12 @@ export const DashboardView: React.FC = () => {
                   }
                 }}
                 disabled={isFocusRunning}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-white/70 dark:bg-[#20231F]/70 text-[#1E3022] dark:text-[#ECEDE6] hover:bg-white shadow-xs disabled:opacity-50"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/70 dark:bg-[#20231F]/70 text-[#1E3022] dark:text-[#ECEDE6] hover:bg-white shadow-xs disabled:opacity-50"
               >
                 <Minus className="h-3.5 w-3.5" />
               </button>
 
-              <div className="font-mono text-3xl font-extrabold text-[#1E3022] dark:text-[#ECEDE6]">
+              <div className="font-mono text-2xl sm:text-3xl font-extrabold text-[#1E3022] dark:text-[#ECEDE6] whitespace-nowrap">
                 {isFocusRunning ? formatTimerTime(focusSecondsLeft) : `${focusDurationMins} mins`}
               </div>
 
@@ -467,7 +488,7 @@ export const DashboardView: React.FC = () => {
                   }
                 }}
                 disabled={isFocusRunning}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-white/70 dark:bg-[#20231F]/70 text-[#1E3022] dark:text-[#ECEDE6] hover:bg-white shadow-xs disabled:opacity-50"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/70 dark:bg-[#20231F]/70 text-[#1E3022] dark:text-[#ECEDE6] hover:bg-white shadow-xs disabled:opacity-50"
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -504,7 +525,7 @@ export const DashboardView: React.FC = () => {
 
             {/* Mountain SVG Artwork */}
             <div className="pt-4 flex flex-col items-center">
-              <svg viewBox="0 0 240 70" className="w-56 h-16 text-[#324C35] dark:text-[#526B55]">
+              <svg viewBox="0 0 240 70" className="w-full max-w-[220px] h-auto text-[#324C35] dark:text-[#526B55]">
                 <polygon points="10,70 60,20 110,70" fill="currentColor" opacity="0.6" />
                 <polygon points="50,70 120,5 190,70" fill="currentColor" opacity="0.8" />
                 <polygon points="150,70 190,25 230,70" fill="currentColor" opacity="0.5" />
@@ -666,6 +687,21 @@ export const DashboardView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Universal Calendar Day Details Modal */}
+      {isDayDetailsOpen && (
+        <DayDetailsModal
+          dateKey={modalDateKey}
+          initialTab={modalInitialTab}
+          onDateChange={(d) => {
+            setModalDateKey(d);
+            const [y, m, day] = d.split('-').map(Number);
+            setView({ y, m: m - 1 });
+            setSelectedCalendarDay(day);
+          }}
+          onClose={() => setIsDayDetailsOpen(false)}
+        />
+      )}
     </div>
   );
 };

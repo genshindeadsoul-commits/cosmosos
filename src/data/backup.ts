@@ -14,7 +14,9 @@ export interface BackupSettings {
   playlists?: PlaylistItem[]; activePlaylistId?: string; mailFolder?: string;
   appleMusic?: { x?: number; y?: number; w?: number; h?: number; mode?: 'compact' | 'expanded' | 'minimized'; visible?: boolean };
   monthlyBudgets?: Record<string, number>;
-  dashboardGrid?: { mode?: '1-col' | '2-col' | '3-col' | 'auto'; autoAdapt?: boolean };
+  dashboardGrid?: { mode?: '1-col' | '2-col' | 'auto'; autoAdapt?: boolean };
+  preferredCalendarTab?: 'overview' | 'tasks' | 'notes' | 'workout' | 'expenses';
+  lastSelectedDate?: string;
 }
 
 const SECRETISH = /token|secret|password|passwd|credential|api[_-]?key|authorization|cookie|refresh/i;
@@ -85,11 +87,21 @@ export function sanitizeSettings(raw: any): BackupSettings {
   }
   if (raw.dashboardGrid && typeof raw.dashboardGrid === 'object') {
     const dg = raw.dashboardGrid;
-    const mode = ['1-col', '2-col', '3-col', 'auto'].includes(dg.mode) ? dg.mode : undefined;
+    const mode = ['1-col', '2-col', 'auto'].includes(dg.mode)
+      ? dg.mode
+      : dg.mode === '3-col'
+      ? '2-col'
+      : undefined;
     const autoAdapt = typeof dg.autoAdapt === 'boolean' ? dg.autoAdapt : undefined;
     if (mode !== undefined || autoAdapt !== undefined) {
       out.dashboardGrid = { mode: mode as any, autoAdapt };
     }
+  }
+  if (['overview', 'tasks', 'notes', 'workout', 'expenses'].includes(raw.preferredCalendarTab)) {
+    out.preferredCalendarTab = raw.preferredCalendarTab;
+  }
+  if (typeof raw.lastSelectedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastSelectedDate)) {
+    out.lastSelectedDate = raw.lastSelectedDate;
   }
   return out;
 }

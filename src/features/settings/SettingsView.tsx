@@ -168,7 +168,7 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Dashboard Layout / Grid Preferences Card (Part 9) */}
+      {/* Dashboard Layout / Grid Preferences Card */}
       <div className="rounded-2xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-5 sm:p-6 shadow-xs space-y-4">
         <div>
           <h2 className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
@@ -179,12 +179,11 @@ export const SettingsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
           {[
-            { id: '1-col', label: 'One column', desc: 'Spacious single column layout' },
-            { id: '2-col', label: 'Two columns', desc: 'Balanced side-by-side cards' },
-            { id: '3-col', label: 'Three columns', desc: 'Compact dense card view' },
-            { id: 'auto', label: 'Auto / Adaptive', desc: 'Optimal layout based on screen width' },
+            { id: '1-col', label: 'One Column', desc: 'Spacious single-column layout' },
+            { id: '2-col', label: 'Two Columns', desc: 'Balanced side-by-side layout' },
+            { id: 'auto', label: 'Auto / Adaptive', desc: 'Automatically selects one or two columns' },
           ].map((opt) => {
             const isSelected = (prefs.dashboardGrid?.mode ?? DEFAULT_DASHBOARD_GRID.mode) === opt.id;
             return (
@@ -209,25 +208,6 @@ export const SettingsView: React.FC = () => {
               </button>
             );
           })}
-        </div>
-
-        {/* Option: Automatically adapt to screen width */}
-        <div className="pt-2 border-t border-[#DFE1D9] dark:border-[#383D35] flex items-center justify-between">
-          <div>
-            <label htmlFor="auto-adapt-toggle" className="text-xs font-semibold text-[#252821] dark:text-[#ECEDE6] cursor-pointer">
-              Automatically adapt to screen width
-            </label>
-            <p className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F]">
-              Reduces columns dynamically on smaller mobile screens to prevent horizontal overflow and text clipping.
-            </p>
-          </div>
-          <input
-            id="auto-adapt-toggle"
-            type="checkbox"
-            checked={prefs.dashboardGrid?.autoAdapt ?? DEFAULT_DASHBOARD_GRID.autoAdapt}
-            onChange={(e) => setDashboardGrid({ autoAdapt: e.target.checked })}
-            className="h-4 w-4 rounded accent-[#3D5240] dark:accent-[#526B55] cursor-pointer"
-          />
         </div>
       </div>
 
