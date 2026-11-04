@@ -1,5 +1,4 @@
-# Only these two are called without a Supabase user JWT (see comments in each index.ts).
-[functions.oauth-callback]
-verify_jwt = false
-[functions.health-ingest]
+# One function serves every route. The gateway JWT check is off because two routes
+# (oauth-callback, health-ingest) can't carry a Supabase JWT; router.ts authenticates each route itself.
+[functions.api]
 verify_jwt = false
