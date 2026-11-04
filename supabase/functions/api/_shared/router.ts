@@ -1,4 +1,4 @@
-import { disconnect, calendarImport, finishOAuth, healthIngest, sheetsPreview, spotifyToken, startOAuth } from './handlers.ts';
+import { disconnect, calendarImport, finishOAuth, healthIngest, sheetsPreview, startOAuth } from './handlers.ts';
 import { gmailAction } from './gmailApi.ts';
 import { driveAction } from './driveApi.ts';
 import { type Ctx, HttpError } from './ports.ts';
@@ -13,7 +13,6 @@ const USER_ROUTES: Record<string, UserRoute> = {
   'drive-backup': driveAction,
   'calendar-import': (u, _b, c) => calendarImport(u, c),
   'sheets-preview': sheetsPreview,
-  'spotify-token': (u, _b, c) => spotifyToken(u, c),
 };
 
 export function cors(req: Request, ctx: Ctx): Record<string, string> {

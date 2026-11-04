@@ -39,13 +39,8 @@ The app has real URLs (`/notes`, `/tasks`, ...), so the host must serve `index.h
 | Google sign-in completes, then you're back on the login screen (the app now says "couldn't complete it") | **Address mismatch.** Sign-in must finish on the same web address where you clicked *Continue with Google*. On Vercel, the dashboard's Visit button opens a one-off per-deployment address (`project-abc123xyz-team.vercel.app`) that Supabase doesn't know, so it sends you back to the Site URL instead. Fix: open the app at its stable address (e.g. `https://project-team.vercel.app`), **and** add Redirect URL patterns in Supabase → Authentication → URL Configuration: your stable address with `/**`, plus a wildcard for deployment URLs such as `https://*-<team-slug>.vercel.app/**`. Optionally set `VITE_APP_ORIGIN` to the stable address so the login page points people there. |
 | Lands back on the login screen with a redirect error | Add the app's exact URL to Supabase → Authentication → URL Configuration → Redirect URLs. |
 
-## 3. First admin
-Admins are rows in `public.app_admins`; no client can write that table. After you have signed in once, run in the SQL Editor (service role / dashboard):
-```sql
-insert into public.app_admins (user_id)
-select id from auth.users where email = 'you@example.com';
-```
-Admins see aggregate counts only (`admin_overview()`); no RLS policy gives them access to anyone's records.
+## 3. Administration
+The in-app Admin UI has been removed to simplify navigation and focus on personal productivity. The backend `app_admins` table and `admin_overview()` database function remain preserved non-destructively in Postgres for backend reporting if needed.
 
 ## 4. Verify isolation
 - Local scratch Postgres: `./supabase/tests/run.sh` (uses a stub of Supabase's `auth` schema).

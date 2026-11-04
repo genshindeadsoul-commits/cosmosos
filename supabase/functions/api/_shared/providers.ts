@@ -1,4 +1,4 @@
-export type Provider = 'gmail' | 'google_calendar' | 'google_sheets' | 'google_drive' | 'spotify';
+export type Provider = 'gmail' | 'google_calendar' | 'google_sheets' | 'google_drive';
 
 export interface ProviderConfig {
   authUrl: string; tokenUrl: string; scopes: string[]; requiredScope: string;
@@ -25,9 +25,6 @@ export const PROVIDERS: Record<Provider, ProviderConfig> = {
   // Backups only: drive.file = access to files THIS app created (never the rest of the user's Drive).
   google_drive: { ...GOOGLE, scopes: ['https://www.googleapis.com/auth/drive.file', 'email'],
     requiredScope: 'https://www.googleapis.com/auth/drive.file', verifyUrl: 'https://www.googleapis.com/drive/v3/about?fields=user' },
-  spotify: { authUrl: 'https://accounts.spotify.com/authorize', tokenUrl: 'https://accounts.spotify.com/api/token',
-    scopes: ['user-read-playback-state', 'user-modify-playback-state'], requiredScope: 'user-modify-playback-state',
-    clientIdEnv: 'SPOTIFY_CLIENT_ID', clientSecretEnv: 'SPOTIFY_CLIENT_SECRET', verifyUrl: 'https://api.spotify.com/v1/me', extraAuthParams: { show_dialog: 'true' } },
 };
 
 export const isProvider = (p: unknown): p is Provider => typeof p === 'string' && Object.prototype.hasOwnProperty.call(PROVIDERS, p);

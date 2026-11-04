@@ -50,6 +50,7 @@ export function toRows(d: CosmosAppData): RowSet {
   return {
     notes: d.notes.map((n) => ({
       id: n.id, title: n.title, content: n.content, excerpt: n.excerpt, starred: !!n.starred, tags: n.tags ?? [],
+      note_date: nz(n.noteDate),
     })),
     tasks: d.tasks.map((t) => ({
       id: t.id, title: t.title, description: nz(t.description), list_name: t.list, status: t.status, priority: t.priority,
@@ -69,7 +70,7 @@ export function toRows(d: CosmosAppData): RowSet {
     })),
     workouts: d.workouts.map((w) => ({
       id: w.id, title: w.title, workout_date: w.date, duration_minutes: w.durationMinutes, calories: w.calories,
-      exercises: w.exercises ?? [], notes: nz(w.notes),
+      exercises: w.exercises ?? [], notes: nz(w.notes), source: nz(w.source), external_id: nz(w.externalId),
     })),
     goals: d.goals.map((g) => ({
       id: g.id, title: g.title, category: g.category, current_value: g.current, target_value: g.target,
@@ -126,7 +127,8 @@ export function fromRows(r: RowSet, today = new Date()): CosmosAppData {
   return {
     notes: r.notes.map((n) => ({
       id: s(n.id), title: s(n.title), content: s(n.content), excerpt: s(n.excerpt), starred: !!n.starred,
-      tags: (n.tags as string[]) ?? [], createdAt: s(n.created_at), updatedAt: s(n.updated_at),
+      tags: (n.tags as string[]) ?? [], noteDate: date10(n.note_date) || undefined,
+      createdAt: s(n.created_at), updatedAt: s(n.updated_at),
     })),
     tasks: r.tasks.map((t) => ({
       id: s(t.id), title: s(t.title), description: (t.description as string) ?? undefined, list: s(t.list_name) as Task['list'],
@@ -150,8 +152,11 @@ export function fromRows(r: RowSet, today = new Date()): CosmosAppData {
       renewalDate: date10(x.renewal_date),
     })),
     workouts: r.workouts.map((w) => ({
-      id: s(w.id), title: s(w.title), date: date10(w.workout_date), durationMinutes: num(w.duration_minutes), calories: num(w.calories),
+      id: s(w.id), title: s(w.title), date: date10(w.workout_date),
+      durationMinutes: w.duration_minutes == null ? null : num(w.duration_minutes),
+      calories: w.calories == null ? null : num(w.calories),
       exercises: (w.exercises as WorkoutLog['exercises']) ?? [], notes: (w.notes as string) ?? undefined,
+      source: (w.source as string) ?? undefined, externalId: (w.external_id as string) ?? undefined,
     })),
     goals: r.goals.map((g) => ({
       id: s(g.id), title: s(g.title), category: s(g.category) as Goal['category'], current: num(g.current_value),
@@ -252,6 +257,7 @@ const MODULE_OF: Record<TableName, string> = {
 };
 const reasonFor = (f: SaveFailure): string => {
   const m = f.message;
+  if (/column ["']?note_date["']? does not exist/i.test(m) || (f.table === 'notes' && /column.*does not exist/i.test(m))) return 'needs migration 0005';
   if (/invalid input syntax for type uuid/i.test(m)) return 'an item had an invalid ID';
   if (f.code === '42501' || /row-level security|permission denied/i.test(m)) return 'your account isn’t allowed to save this';
   if (f.code === '23503' || /foreign key/i.test(m)) return 'it points at a record that no longer exists';

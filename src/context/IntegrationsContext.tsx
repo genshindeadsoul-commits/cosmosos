@@ -41,7 +41,7 @@ interface IntegrationsContextType {
 const Ctx = createContext<IntegrationsContextType | undefined>(undefined);
 
 export const IntegrationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { showToast, importCalendarEvents } = useApp();
+  const { showToast, importCalendarEvents, refreshImportedWorkouts } = useApp();
   const { user } = useAuth();
   const [connections, setConnections] = useState<Record<string, Connection>>({});
   const [connectionsLoaded, setLoaded] = useState(false);
@@ -113,6 +113,10 @@ export const IntegrationsProvider: React.FC<{ children: React.ReactNode }> = ({ 
       showToast(`Imported ${added} new and updated ${updated} Google Calendar events${r.truncated ? ' (more exist; showing the first 750)' : ''}.`, 'success');
     } else if (uiId === 'gmail') {
       await refresh(); showToast('Open Gmail from the sidebar to browse mail.', 'info');
+    } else if (uiId === 'health') {
+      await refresh();
+      await refreshImportedWorkouts();
+      showToast('Checked for imported workouts.', 'info');
     } else {
       showToast('Nothing to sync for this connector.', 'info');
     }

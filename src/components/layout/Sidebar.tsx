@@ -60,7 +60,6 @@ export const Sidebar: React.FC = () => {
     userProfile,
     setProfileOpen,
   } = useApp();
-  const { isAdmin } = useAuth();
   const { isConnected } = useIntegrations();
 
   const handleNavClick = (mod: ModuleType) => {
@@ -122,7 +121,7 @@ export const Sidebar: React.FC = () => {
         <div className="flex-1 overflow-y-auto px-3 py-1 space-y-4">
           {/* Main Module Nav */}
           <nav className="space-y-0.5" aria-label="Main Navigation">
-            {[...NAV_ITEMS, ...(isAdmin ? [{ id: 'admin' as ModuleType, label: 'Admin', icon: ShieldCheck }] : [])].map((item) => {
+            {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = activeModule === item.id;
               return (

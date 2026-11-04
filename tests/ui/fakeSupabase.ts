@@ -40,7 +40,7 @@ function from(t: string) {
       return b;
     },
     upsert: async (rows: Row[] | Row) => { if (failWrites.on) return { error: { message: 'simulated outage' } }; if (failTables.has(t)) return { error: { message: 'simulated failure in ' + t } }; const arr = Array.isArray(rows) ? rows : [rows]; calls.push({ op: 'upsert', table: t, n: arr.length }); for (const r of arr) { const e = uuidError(t, r); if (e) return { error: e }; }
-      for (const r of arr) { const k = tbl(t); const i = k.findIndex((x) => x.id === r.id && x.habit_id === r.habit_id && x.checkin_date === r.checkin_date); if (i >= 0) k[i] = { ...k[i], ...r }; else k.push({ ...r, user_id: currentUser.id }); }
+      for (const r of arr) { const uid = r.user_id ?? currentUser?.id; const k = ((db[uid] ??= {})[t] ??= []); const i = k.findIndex((x) => x.id === r.id && x.habit_id === r.habit_id && x.checkin_date === r.checkin_date); if (i >= 0) k[i] = { ...k[i], ...r, user_id: uid }; else k.push({ ...r, user_id: uid }); }
       return { error: null }; },
     update: () => ({ eq: async () => ({ error: null }) }),
     delete() { const f: Row = {}; const q: any = { eq(c: string, v: any) { f[c] = v; return q; }, then(res: any) {

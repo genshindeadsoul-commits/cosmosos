@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Plus,
   Search,
@@ -13,10 +13,12 @@ import {
   Code,
   Tag,
   Check,
+  Calendar,
+  CalendarPlus,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { todayLocal } from '../../lib/recurrence';
-import { CalendarPlus } from 'lucide-react';
+import { AnchoredPopover } from '../../components/common/AnchoredPopover';
 
 export const NotesView: React.FC = () => {
   const {
@@ -30,21 +32,42 @@ export const NotesView: React.FC = () => {
     showToast,
     addTask,
     saveStatus: syncStatus,
+    focusRecord,
+    setFocusRecord,
   } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [dateFilter, setDateFilter] = useState<string>('all');
   const [isMobileEditorOpen, setIsMobileEditorOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleDate, setScheduleDate] = useState(todayLocal());
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [confirmDeleteNoteId, setConfirmDeleteNoteId] = useState<string | null>(null);
+  const scheduleAnchorRef = useRef<HTMLButtonElement>(null);
+
+  // Focus navigation from Calendar/Search
+  useEffect(() => {
+    if (focusRecord && focusRecord.kind === 'note') {
+      setSelectedNoteId(focusRecord.id);
+      setIsMobileEditorOpen(true);
+      setFocusRecord(null);
+    }
+  }, [focusRecord, setFocusRecord, setSelectedNoteId]);
 
   const selectedNote = notes.find((n) => n.id === selectedNoteId) || notes[0];
 
+  const availableDates = Array.from(
+    new Set(notes.map((n) => n.noteDate).filter(Boolean) as string[])
+  ).sort().reverse();
+
   const filteredNotes = notes.filter((n) => {
     const q = searchQuery.toLowerCase();
-    return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+    const matchesSearch = !q || n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+    if (!matchesSearch) return false;
+    if (dateFilter === 'dated') return Boolean(n.noteDate);
+    if (dateFilter !== 'all') return n.noteDate === dateFilter;
+    return true;
   });
 
   const handleCreateNewNote = () => {
@@ -93,7 +116,7 @@ export const NotesView: React.FC = () => {
   };
 
   return (
-    <div className="h-[calc(100vh-5rem)] max-w-7xl mx-auto flex flex-col rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] shadow-xs overflow-hidden">
+    <div className="h-[calc(100dvh-5rem)] max-w-7xl mx-auto flex flex-col rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] shadow-xs overflow-hidden">
       {/* Two-Pane Layout (desktop) / Stacked view (mobile) */}
       <div className="flex h-full overflow-hidden">
         {/* Left Pane: Notes List (hidden on mobile if mobile editor is active) */}
@@ -116,8 +139,8 @@ export const NotesView: React.FC = () => {
             </span>
           </div>
 
-          {/* Search bar */}
-          <div className="p-3 border-b border-[#DFE1D9] dark:border-[#383D35]">
+          {/* Search bar & Date filter */}
+          <div className="p-3 border-b border-[#DFE1D9] dark:border-[#383D35] space-y-2">
             <div className="flex items-center gap-2 rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] px-3 py-1.5 text-xs">
               <Search className="h-3.5 w-3.5 text-[#8A8E85]" />
               <input
@@ -127,6 +150,22 @@ export const NotesView: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-transparent text-[#252821] dark:text-[#ECEDE6] placeholder-[#8A8E85] focus:outline-none"
               />
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <select
+                aria-label="Filter notes by date"
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full rounded border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] px-2 py-1 text-xs text-[#252821] dark:text-[#ECEDE6]"
+              >
+                <option value="all">All notes</option>
+                <option value="dated">Dated notes only</option>
+                {availableDates.map((d) => (
+                  <option key={d} value={d}>
+                    Date: {d}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -184,22 +223,37 @@ export const NotesView: React.FC = () => {
                       {n.excerpt || 'No additional text'}
                     </p>
 
-                    <div className="flex items-center justify-between pt-2 text-[10px]">
+                    <div className="flex flex-wrap items-center justify-between gap-1 pt-2 text-[10px]">
                       <span className={isSelected ? 'text-white/70' : 'text-[#8A8E85]'}>
                         {new Date(n.updatedAt).toLocaleDateString(undefined, {
                           month: 'short',
                           day: 'numeric',
                         })}
                       </span>
-                      {n.tags.length > 0 && (
-                        <span
-                          className={`rounded px-1.5 py-0.5 ${
-                            isSelected ? 'bg-white/20 text-white' : 'bg-[#E8EEE6] dark:bg-[#303B2E] text-[#526B55] dark:text-[#A8BDA1]'
-                          }`}
-                        >
-                          {n.tags[0]}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {n.noteDate && (
+                          <span
+                            className={`rounded px-1.5 py-0.5 font-medium ${
+                              isSelected
+                                ? 'bg-white/20 text-white'
+                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                            }`}
+                          >
+                            📅 {n.noteDate}
+                          </span>
+                        )}
+                        {n.tags.length > 0 && (
+                          <span
+                            className={`rounded px-1.5 py-0.5 ${
+                              isSelected
+                                ? 'bg-white/20 text-white'
+                                : 'bg-[#E8EEE6] dark:bg-[#303B2E] text-[#526B55] dark:text-[#A8BDA1]'
+                            }`}
+                          >
+                            {n.tags[0]}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -218,7 +272,7 @@ export const NotesView: React.FC = () => {
             <>
               {/* Editor Toolbar */}
               <div className="flex flex-wrap items-center justify-between border-b border-[#DFE1D9] dark:border-[#383D35] px-4 py-2 gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {/* Mobile Back Button */}
                   <button
                     onClick={() => setIsMobileEditorOpen(false)}
@@ -283,38 +337,58 @@ export const NotesView: React.FC = () => {
                 </div>
 
                 {/* Right controls: Save badge & Delete */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="flex items-center gap-1 text-[11px] text-[#477653] dark:text-[#91B594] font-medium">
                     <Check className="h-3 w-3" />
                     <span role="status">{syncStatus === 'saving' ? 'Saving…' : syncStatus === 'error' ? 'Not saved' : 'Saved'}</span>
                   </span>
-                  <div className="relative">
-                    <button
-                      onClick={() => setScheduleOpen((o) => !o)}
-                      aria-label="Schedule this note"
-                      aria-expanded={scheduleOpen}
-                      title="Schedule: create a dated task linked to this note"
-                      className="rounded p-1 text-[#8A8E85] hover:text-[#526B55]"
-                    >
-                      <CalendarPlus className="h-4 w-4" />
-                    </button>
-                    {scheduleOpen && (
-                      <div role="dialog" aria-label="Schedule note" className="absolute right-0 z-20 mt-1 w-56 space-y-2 rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] p-3 shadow-lg">
-                        <label className="block text-[11px] font-semibold text-[#6B7067] dark:text-[#A6AB9F]">Due date
-                          <input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)}
-                            className="mt-1 w-full rounded border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-2 py-1 text-xs" />
-                        </label>
-                        <button
-                          disabled={!scheduleDate}
-                          onClick={() => {
-                            addTask({ title: `Review: ${selectedNote.title || 'Untitled'}`.slice(0, 200), list: 'Inbox', priority: 'MEDIUM', status: 'todo', dueDate: scheduleDate, linkedNoteId: selectedNote.id });
-                            setScheduleOpen(false);
-                          }}
-                          className="w-full rounded bg-[#3D5240] dark:bg-[#526B55] px-2 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-                        >Create linked task</button>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    ref={scheduleAnchorRef}
+                    onClick={() => setScheduleOpen((o) => !o)}
+                    aria-label="Schedule this note"
+                    aria-expanded={scheduleOpen}
+                    title="Schedule: create a dated task linked to this note"
+                    className="rounded p-1 text-[#8A8E85] hover:text-[#526B55]"
+                  >
+                    <CalendarPlus className="h-4 w-4" />
+                  </button>
+                  <AnchoredPopover
+                    anchorRef={scheduleAnchorRef}
+                    open={scheduleOpen}
+                    onClose={() => setScheduleOpen(false)}
+                    title="Schedule note"
+                  >
+                    <div className="w-56 space-y-2">
+                      <label className="block text-[11px] font-semibold text-[#6B7067] dark:text-[#A6AB9F]">
+                        Due date
+                        <input
+                          type="date"
+                          value={scheduleDate}
+                          onChange={(e) => setScheduleDate(e.target.value)}
+                          className="mt-1 w-full rounded border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-2 py-1 text-xs text-[#252821] dark:text-[#ECEDE6]"
+                        />
+                      </label>
+                      <button
+                        disabled={!scheduleDate}
+                        onClick={() => {
+                          addTask({
+                            title: `Review: ${selectedNote.title || 'Untitled'}`.slice(0, 200),
+                            list: 'Inbox',
+                            priority: 'MEDIUM',
+                            status: 'todo',
+                            dueDate: scheduleDate,
+                            linkedNoteId: selectedNote.id,
+                          });
+                          setScheduleOpen(false);
+                          showToast('Linked task created', 'success');
+                        }}
+                        className="w-full rounded bg-[#3D5240] dark:bg-[#526B55] px-2 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                      >
+                        Create linked task
+                      </button>
+                    </div>
+                  </AnchoredPopover>
+
                   <button
                     onClick={() => toggleStarNote(selectedNote.id)}
                     aria-label="Star document"
@@ -356,7 +430,7 @@ export const NotesView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Title Input & Tags */}
+              {/* Title Input, Note Date & Tags */}
               <div className="p-4 sm:p-6 pb-2 space-y-2 max-w-3xl">
                 <input
                   type="text"
@@ -365,6 +439,27 @@ export const NotesView: React.FC = () => {
                   placeholder="Note Title"
                   className="w-full text-xl sm:text-2xl font-extrabold tracking-tight text-[#252821] dark:text-[#ECEDE6] bg-transparent focus:outline-none"
                 />
+
+                {/* Date Association for Calendar */}
+                <div className="flex items-center gap-2 text-xs text-[#6B7067] dark:text-[#A6AB9F]">
+                  <Calendar className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-[11px] font-semibold">Note date:</span>
+                  <input
+                    type="date"
+                    aria-label="Note date"
+                    value={selectedNote.noteDate ?? ''}
+                    onChange={(e) => updateNote({ ...selectedNote, noteDate: e.target.value || undefined })}
+                    className="rounded border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-2 py-0.5 text-xs text-[#252821] dark:text-[#ECEDE6]"
+                  />
+                  {selectedNote.noteDate && (
+                    <button
+                      onClick={() => updateNote({ ...selectedNote, noteDate: undefined })}
+                      className="text-[11px] text-[#8A8E85] hover:text-rose-600 underline"
+                    >
+                      Clear date
+                    </button>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-2 text-xs text-[#8A8E85]">
                   <Tag className="h-3.5 w-3.5 shrink-0" />
@@ -448,20 +543,10 @@ export const NotesView: React.FC = () => {
                   className="w-full h-full min-h-[300px] resize-none bg-transparent text-sm leading-relaxed text-[#252821] dark:text-[#ECEDE6] focus:outline-none font-sans"
                 />
               </div>
-
-              {/* Footer status */}
-              <div className="border-t border-[#DFE1D9] dark:border-[#383D35] px-4 py-2 text-[11px] text-[#8A8E85] flex justify-between">
-                <span>
-                  {selectedNote.content.trim().split(/\s+/).filter(Boolean).length} words
-                </span>
-                <span>
-                  Last modified {new Date(selectedNote.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-xs text-[#8A8E85]">
-              Select a note or create a new one to start writing.
+            <div className="flex flex-1 items-center justify-center text-xs text-[#8A8E85]">
+              Select a note or create a new page to begin writing.
             </div>
           )}
         </div>

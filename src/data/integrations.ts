@@ -15,10 +15,8 @@ export const INTEGRATION_CATALOG: IntegrationAccount[] = [
     status: 'not_connected', permissions: ['gmail.readonly'], syncDirection: 'Read via API; references stored, not mailbox copies' },
   { id: 'reminders', name: 'Browser reminders', description: 'In-app reminders. Background delivery depends on the browser; permission is requested only when you enable it.',
     status: 'not_connected', permissions: ['Notification permission'], syncDirection: 'Local' },
-  { id: 'health', name: 'Health Connect / Google Fit', description: 'A browser cannot read Health Connect. Pair an Android companion app with a personal ingest token (below); synced workouts appear in Fitness. Manual logging always works.',
-    status: 'not_connected', permissions: ['Per-user ingest token (revocable)'], syncDirection: 'Companion → Cosmos (not available yet)' },
-  { id: 'spotify', name: 'Spotify', description: 'Remote-control playback on a device where Spotify is already open. Requires Spotify Premium. Cosmos OS does not stream audio itself.',
-    status: 'not_connected', permissions: ['user-read-playback-state', 'user-modify-playback-state'], syncDirection: 'Remote control' },
+  { id: 'health', name: 'Health Connect / Google Fit', description: 'Android Health Connect cannot be read directly by web browsers. Generate a personal ingest token below and configure your Android companion app to send workouts to Cosmos OS. Synced workouts appear in Fitness. Manual logging always works.',
+    status: 'not_connected', permissions: ['Per-user ingest token (revocable)'], syncDirection: 'Companion app → Cosmos OS' },
   { id: 'apple_music', name: 'Apple Music', description: 'Paste a playlist or album link to play it in a floating widget using Apple’s official embedded player. No account connection or developer membership is needed here; Apple handles sign-in and subscription inside its player.',
     status: 'not_connected', permissions: ['None (Apple’s embed handles its own sign-in)'], syncDirection: 'None' },
 ];

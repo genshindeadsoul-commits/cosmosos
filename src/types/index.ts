@@ -8,8 +8,7 @@ export type ModuleType =
   | 'trackers'
   | 'tasks'
   | 'settings'
-  | 'mail'
-  | 'admin';
+  | 'mail';
 
 export type TaskListType = 'Inbox' | 'Work' | 'Study' | 'Health' | 'Personal' | 'Holiday trip';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -51,6 +50,7 @@ export interface Note {
   excerpt: string;
   starred?: boolean;
   tags: string[];
+  noteDate?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -118,10 +118,12 @@ export interface WorkoutLog {
   id: string;
   title: string;
   date: string; // YYYY-MM-DD
-  durationMinutes: number;
-  calories: number;
+  durationMinutes: number | null;
+  calories: number | null;
   exercises: ExerciseEntry[];
   notes?: string;
+  source?: string;
+  externalId?: string;
 }
 
 export type GoalCategory = 'FINANCE' | 'LEARNING' | 'FITNESS' | 'PROJECTS';
@@ -194,33 +196,6 @@ export interface UserProfile {
   accountType: 'Cloud Synchronized';
 }
 
-export interface MusicTrack {
-  id: string;
-  title: string;
-  artist: string;
-  albumArt?: string;
-  durationSeconds: number;
-  externalUrl?: string;
-}
-
-export interface MusicPlayerState {
-  isOpen: boolean;
-  isMinimized: boolean;
-  provider: 'ambient' | 'spotify';
-  isPlaying: boolean;
-  currentTrack: string;
-  artist: string;
-  albumArt?: string;
-  progressSeconds: number;
-  durationSeconds: number;
-  volume: number; // 0 to 1
-  ambientPreset?: 'forest' | 'rain' | 'alpha' | 'celestial';
-  spotifyActiveDevice?: string;
-  activeTrackIndex?: number;
-  /** External providers only: truthful connection state reported by the provider calls. */
-  externalStatus?: 'unknown' | 'ok' | 'not_connected' | 'not_authorized' | 'error';
-  externalMessage?: string;
-}
 
 export interface GmailMessage {
   id: string;

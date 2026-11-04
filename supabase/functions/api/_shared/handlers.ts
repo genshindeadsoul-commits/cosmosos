@@ -69,12 +69,10 @@ export async function disconnect(userId: string, body: any, ctx: Ctx): Promise<{
   const provider: Provider = body.provider;
   const conn = await ctx.db.getConnection(userId, provider);
   if (conn) {
-    if (provider !== 'spotify') {                                 // best-effort revoke at Google
-      try {
-        const { accessToken } = await getAccessToken(userId, provider, ctx);
-        await ctx.fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(accessToken)}`, { method: 'POST' });
-      } catch { /* already revoked/expired: still disconnect locally */ }
-    }
+    try {
+      const { accessToken } = await getAccessToken(userId, provider, ctx);
+      await ctx.fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(accessToken)}`, { method: 'POST' });
+    } catch { /* already revoked/expired: still disconnect locally */ }
     await ctx.db.deleteSecret(conn.id);
     await ctx.db.saveConnection(userId, provider, { status: 'not_connected', account_label: null, granted_scopes: [], last_error: null, last_synced_at: null });
   }
@@ -111,12 +109,6 @@ export async function sheetsPreview(userId: string, body: any, ctx: Ctx) {
     providerFetch(userId, 'google_sheets', `${base}/values/${encodeURIComponent(range)}`, accessToken, ctx),
   ]);
   return { title: meta.properties?.title ?? 'Sheet', values: (vals.values ?? []).slice(0, 1000) };
-}
-
-// ---------------- Music ----------------
-export async function spotifyToken(userId: string, ctx: Ctx) {
-  const { accessToken, expiresIn } = await getAccessToken(userId, 'spotify', ctx);
-  return { access_token: accessToken, expires_in: expiresIn };
 }
 
 // ---------------- Health ingest (companion app, bearer ingest token) ----------------

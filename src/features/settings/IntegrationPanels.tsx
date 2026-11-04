@@ -55,45 +55,99 @@ export const SheetsImportPanel: React.FC = () => {
 };
 
 export const HealthTokenPanel: React.FC = () => {
-  const { healthTokens, createHealthToken, revokeHealthToken } = useIntegrations();
+  const { healthTokens, createHealthToken, revokeHealthToken, sync, busy } = useIntegrations();
   const { showToast } = useApp();
   const [label, setLabel] = useState('My phone');
   const [fresh, setFresh] = useState<string | null>(null);
+  const [showCurl, setShowCurl] = useState(false);
   const endpoint = `${import.meta.env.VITE_SUPABASE_URL ?? '<your-project>.supabase.co'}/functions/v1/api/health-ingest`;
   const active = healthTokens.filter((t) => !t.revoked_at);
 
+  const sampleCurl = (token: string) => `curl -X POST "${endpoint}" \\
+  -H "Authorization: Bearer ${token}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"workouts":[{"externalId":"demo-${Date.now()}","title":"Outdoor Run","date":"${new Date().toISOString().slice(0, 10)}","durationMinutes":35,"calories":310}]}'`;
+
   return (
     <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] p-4 space-y-3">
-      <div className="text-xs font-bold">Companion app ingest tokens</div>
-      <p className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F]">
-        POST workouts to <code className="break-all">{endpoint}</code> with <code>Authorization: Bearer &lt;token&gt;</code>. Body:
-        <code className="block mt-1 whitespace-pre-wrap">{`{"workouts":[{"externalId":"hc-123","title":"Run","date":"2026-10-19","durationMinutes":32,"calories":null}]}`}</code>
-        Missing duration/calories stay blank, never 0. Re-sending the same <code>externalId</code> is safe.
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-bold">Companion app ingest tokens</div>
+        <button
+          onClick={() => sync('health')}
+          disabled={busy === 'health'}
+          className="flex items-center gap-1.5 rounded-lg border border-[#DFE1D9] dark:border-[#383D35] px-2.5 py-1 text-xs font-semibold text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F5F5F0] dark:hover:bg-[#292D27] disabled:opacity-50"
+        >
+          <span>{busy === 'health' ? 'Checking…' : 'Check for new data'}</span>
+        </button>
+      </div>
+
+      <p className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F] leading-relaxed">
+        <strong>Why a companion app?</strong> Android Health Connect is an on-device Android service (<code>androidx.health.connect.client</code>) and cannot be queried directly from web browsers. Google Fit REST APIs are being phased out. Your Android companion app reads Health Connect locally and pushes workouts here using a personal ingest token. Synced workouts appear in Fitness.
       </p>
+
+      <div className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F] space-y-1">
+        <p>
+          POST workouts to <code className="break-all">{endpoint}</code> with <code>Authorization: Bearer &lt;token&gt;</code>.
+        </p>
+        <p className="text-[10px] text-[#8A8E85]">
+          Missing duration/calories stay blank (never forced to 0). Re-sending the same <code>externalId</code> is safe and idempotent.
+        </p>
+      </div>
+
       <div className="flex gap-2">
-        <input aria-label="Token label" className={field} value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} />
+        <input aria-label="Token label" className={field} value={label} onChange={(e) => setLabel(e.target.value)} maxLength={80} placeholder="Token label (e.g. Pixel 8)" />
         <button className={btn} onClick={async () => { try { setFresh(await createHealthToken(label)); } catch (e) { showToast((e as Error).message, 'error'); } }}>Generate</button>
       </div>
+
       {fresh && (
-        <div role="alert" className="rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 text-[11px]">
-          <p className="font-semibold">Copy this token now. It is shown once and can’t be retrieved later.</p>
-          <code className="mt-1 block break-all">{fresh}</code>
-          <div className="mt-2 flex gap-2">
-            <button className={btn} onClick={() => { void navigator.clipboard?.writeText(fresh); showToast('Token copied', 'success'); }}>Copy</button>
-            <button className="text-xs underline" onClick={() => setFresh(null)}>I’ve saved it</button>
+        <div role="alert" className="rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 text-[11px] space-y-2">
+          <p className="font-semibold text-amber-900 dark:text-amber-200">Copy this token now. It is shown once and cannot be retrieved later.</p>
+          <code className="mt-1 block break-all font-mono bg-white/70 dark:bg-black/30 p-1.5 rounded text-[10px] select-all">{fresh}</code>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button className={btn} onClick={() => { void navigator.clipboard?.writeText(fresh); showToast('Token copied', 'success'); }}>Copy Token</button>
+            <button
+              className="rounded-lg border border-[#DFE1D9] dark:border-[#383D35] px-2.5 py-1 text-xs font-semibold text-[#6B7067] dark:text-[#A6AB9F] hover:bg-white"
+              onClick={() => { void navigator.clipboard?.writeText(sampleCurl(fresh)); showToast('Sample curl command copied', 'success'); }}
+            >
+              Copy Test curl Command
+            </button>
+            <button className="text-xs underline text-[#6B7067] dark:text-[#A6AB9F]" onClick={() => setFresh(null)}>I’ve saved it</button>
           </div>
         </div>
       )}
-      <ul className="space-y-1 text-[11px]">
-        {healthTokens.length === 0 && <li className="text-[#8A8E85]">No tokens yet.</li>}
+
+      <ul className="space-y-1 text-[11px] divide-y divide-[#DFE1D9]/40 dark:divide-[#383D35]/40">
+        {healthTokens.length === 0 && <li className="text-[#8A8E85] py-1">No tokens generated yet.</li>}
         {healthTokens.map((t) => (
-          <li key={t.id} className="flex items-center justify-between gap-2">
-            <span>{t.label} · created {new Date(t.created_at).toLocaleDateString()} · {t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : 'never used'}{t.revoked_at ? ' · revoked' : ''}</span>
+          <li key={t.id} className="flex items-center justify-between gap-2 py-1.5">
+            <div>
+              <span className="font-semibold">{t.label}</span>
+              <span className="text-[#8A8E85]"> · created {new Date(t.created_at).toLocaleDateString()} · {t.last_used_at ? `last used ${new Date(t.last_used_at).toLocaleString()}` : 'never used'}{t.revoked_at ? ' · revoked' : ''}</span>
+            </div>
             {!t.revoked_at && <button className="font-semibold text-rose-600 hover:underline" onClick={() => revokeHealthToken(t.id).catch((e) => showToast(e.message, 'error'))}>Revoke</button>}
           </li>
         ))}
       </ul>
-      {active.length === 0 && <p className="text-[11px] text-[#8A8E85]">Status stays “Not connected” until a companion app actually sends data.</p>}
+
+      <div className="pt-1 text-[11px] text-[#8A8E85]">
+        {active.length === 0 ? (
+          <p>Status stays “Not connected” until an ingest token is generated and a companion app sends data.</p>
+        ) : (
+          <div className="flex items-center justify-between">
+            <p>Status stays “Not connected” until your companion app sends its first workout payload.</p>
+            <button type="button" onClick={() => setShowCurl(!showCurl)} className="underline text-xs text-[#526B55] dark:text-[#A8BDA1]">
+              {showCurl ? 'Hide sample curl' : 'Show sample curl'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {showCurl && (
+        <div className="rounded-lg bg-[#F5F5F0] dark:bg-[#181A17] p-2.5 text-[10px] font-mono overflow-x-auto">
+          <p className="text-[#8A8E85] mb-1 font-sans">Send a test workout using curl (replace &lt;YOUR_TOKEN&gt; with your ingest token):</p>
+          <pre className="whitespace-pre-wrap">{sampleCurl('<YOUR_TOKEN>')}</pre>
+        </div>
+      )}
     </div>
   );
 };

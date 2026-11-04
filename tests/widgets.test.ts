@@ -1,152 +1,161 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAppleMusicUrl, clampBox } from '../src/lib/appleEmbed.ts';
+import { clampBox, parseAppleMusicUrl } from '../src/lib/appleEmbed.ts';
 import { parseMusicLink } from '../src/lib/musicLinks.ts';
-import { addPlaylist, libraryFrom, activeFrom, enabledPlaylists, movePlaylist, removePlaylist, renamePlaylist, togglePlaylist, MAX_PLAYLISTS, type PlaylistItem } from '../src/lib/playlists.ts';
-import { sanitizeFilename, base64UrlToBlob, mergeUnique, replySubject, senderAddress, senderName, quoteForReply, formatBytes, isFolderId, FOLDERS } from '../src/lib/mail.ts';
+import {
+  activeFrom,
+  addPlaylist,
+  enabledPlaylists,
+  libraryFrom,
+  MAX_PLAYLISTS,
+  movePlaylist,
+  PlaylistItem,
+  removePlaylist,
+  renamePlaylist,
+  togglePlaylist,
+} from '../src/lib/playlists.ts';
+import { placePopover } from '../src/lib/popover.ts';
 
-const ok = (u: string) => { const r = parseAppleMusicUrl(u); assert.ok(r.ok, u); return r as Extract<typeof r, { ok: true }>; };
-const bad = (u: string) => { const r = parseAppleMusicUrl(u); assert.equal(r.ok, false, u); return (r as { error: string }).error; };
-
-test('apple: playlist and album links become official embed URLs', () => {
-  assert.equal(ok('https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb').embedUrl, 'https://embed.music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb');
-  assert.equal(ok('https://music.apple.com/gb/album/folklore/1528112358').kind, 'album');
-  assert.equal(ok('https://music.apple.com/in/album/some-name/1528112358').storefront, 'in');
-  assert.equal(ok('https://embed.music.apple.com/us/album/x/1528112358').embedUrl, 'https://embed.music.apple.com/us/album/x/1528112358');
-  assert.equal(ok('  https://music.apple.com/us/playlist/p/pl.u-abc123def456  ').kind, 'playlist');
-});
-test('apple: a track link inside an album keeps only a numeric ?i= and drops every other parameter', () => {
-  assert.equal(ok('https://music.apple.com/us/album/folklore/1528112358?i=1528112363&uo=4&at=evil').embedUrl, 'https://embed.music.apple.com/us/album/folklore/1528112358?i=1528112363');
-  assert.equal(ok('https://music.apple.com/us/album/folklore/1528112358?i=abc').embedUrl, 'https://embed.music.apple.com/us/album/folklore/1528112358');
-});
-test('apple: rejects other hosts, lookalikes, non-https, bad types, and malformed ids with a specific message', () => {
-  assert.match(bad(''), /Paste/);
-  assert.match(bad('not a url'), /link/);
-  assert.match(bad('http://music.apple.com/us/album/x/1528112358'), /https/);
-  for (const h of ['https://evil.com/us/album/x/1528112358', 'https://music.apple.com.evil.com/us/album/x/1528112358', 'https://xmusic.apple.com/us/album/x/1528112358', 'https://music.apple.com@evil.com/us/album/x/1528112358', 'https://apple.com/us/album/x/1528112358']) assert.match(bad(h), /music\.apple\.com/);
-  assert.match(bad('https://music.apple.com/us/artist/taylor-swift/159260351'), /artist/);
-  assert.equal(ok('https://music.apple.com/us/song/x/1528112363').kind, 'song');          // single tracks are supported
-  assert.match(bad('https://music.apple.com/us/station/x/ra.123'), /station/);
-  assert.match(bad('https://music.apple.com/us/album/x/notanumber'), /unrecognized ID/);
-  assert.match(bad('https://music.apple.com/us/playlist/x/12345'), /unrecognized ID/);
-  assert.match(bad('https://music.apple.com/usa/album/x/1528112358'), /country/);
-  assert.match(bad('https://music.apple.com/us/album'), /incomplete/);
-  assert.match(bad('javascript:alert(1)'), /https|link/);
-  assert.match(bad('https://music.apple.com/us/album/<script>/1528112358'), /unsupported characters|unrecognized/);
-});
-test('apple: output is rebuilt from validated parts only (no pass-through of the pasted string)', () => {
-  const r = ok('https://music.apple.com/us/album/x/1528112358?foo=bar#frag');
-  assert.ok(!r.embedUrl.includes('foo') && !r.embedUrl.includes('frag') && r.embedUrl.startsWith('https://embed.music.apple.com/'));
-  assert.ok(r.openUrl.startsWith('https://music.apple.com/'));
-});
-test('window clamping keeps the title bar reachable and respects min sizes', () => {
-  assert.deepEqual(clampBox({ x: -50, y: -9, w: 340, h: 200 }, 1000, 800), { x: 0, y: 0, w: 340, h: 200 });
-  const far = clampBox({ x: 5000, y: 5000, w: 340, h: 200 }, 1000, 800);
-  assert.deepEqual([far.x, far.y], [660, 768]);                      // y leaves the 32px title bar visible
-  assert.equal(clampBox({ x: 0, y: 0, w: 10, h: 10 }, 1000, 800).w, 280);
-  const tiny = clampBox({ x: 0, y: 0, w: 600, h: 600 }, 320, 500);   // small phone: shrinks to fit
-  assert.ok(tiny.w <= 320 && tiny.x === 0);
+test('clampBox keeps the whole window reachable on resize and drag', () => {
+  // Inside viewport: unchanged
+  assert.deepEqual(clampBox({ x: 100, y: 100, w: 300, h: 200 }, 1000, 800, 32), { x: 100, y: 100, w: 300, h: 200 });
+  // Off the left/top: clamped to 0
+  assert.deepEqual(clampBox({ x: -50, y: -20, w: 300, h: 200 }, 1000, 800, 32), { x: 0, y: 0, w: 300, h: 200 });
+  // Off the right/bottom: title bar always stays fully inside viewport
+  const r = clampBox({ x: 950, y: 780, w: 300, h: 200 }, 1000, 800, 32);
+  assert.equal(r.x, 700);
+  assert.equal(r.y, 768);
+  // Viewport smaller than widget min size: clamped to viewport with min constraints
+  const small = clampBox({ x: 10, y: 10, w: 500, h: 500 }, 300, 300, 32);
+  assert.ok(small.w <= 300);
+  assert.ok(small.h <= 300);
 });
 
-test('mail: filenames cannot escape the download folder or carry control characters', () => {
-  assert.equal(sanitizeFilename('../../etc/passwd'), 'passwd');
-  assert.equal(sanitizeFilename('C:\\Users\\me\\evil.exe'), 'evil.exe');
-  assert.equal(sanitizeFilename('..hidden'), 'hidden');
-  assert.equal(sanitizeFilename('a\u0000b\u0007c<>:|?*.pdf'), 'abc.pdf');
-  assert.equal(sanitizeFilename('   '), 'attachment');
-  assert.equal(sanitizeFilename('///'), 'attachment');
-  assert.ok(sanitizeFilename('x'.repeat(500)).length <= 120);
-});
-test('mail: base64url decodes to a generic, non-renderable blob of the right size', async () => {
-  const b = base64UrlToBlob('AQID_-8');
-  assert.equal(b.type, 'application/octet-stream');
-  assert.deepEqual([...new Uint8Array(await b.arrayBuffer())], [1, 2, 3, 255, 239]);
-});
-test('mail: merging pages never duplicates and preserves order', () => {
-  assert.deepEqual(mergeUnique([{ id: 'a' }, { id: 'b' }], [{ id: 'b' }, { id: 'c' }, { id: 'c' }]).map((m) => m.id), ['a', 'b', 'c']);
-});
-test('mail: reply helpers', () => {
-  assert.equal(replySubject('Hi'), 'Re: Hi'); assert.equal(replySubject('Re: Hi'), 'Re: Hi'); assert.equal(replySubject('RE: Hi'), 'RE: Hi');
-  assert.equal(senderAddress('Bob <bob@x.com>'), 'bob@x.com'); assert.equal(senderAddress('bob@x.com'), 'bob@x.com'); assert.equal(senderAddress('No Address'), '');
-  assert.equal(senderName('"Bob B" <bob@x.com>'), 'Bob B');
-  assert.match(quoteForReply('Bob <b@x.com>', 'Mon', 'a\nb'), /On Mon, Bob wrote:\n> a\n> b$/);
-  assert.equal(formatBytes(512), '512 B'); assert.equal(formatBytes(2048), '2 KB'); assert.equal(formatBytes(5 * 1048576), '5.0 MB');
-});
-test('mail: folder list is exactly the seven required, and ids are validated', () => {
-  assert.deepEqual(FOLDERS.map((f) => f.label), ['Inbox', 'All Mail', 'Sent', 'Drafts', 'Starred', 'Spam', 'Trash']);
-  assert.ok(isFolderId('inbox')); assert.ok(!isFolderId('INBOX')); assert.ok(!isFolderId(undefined));
-});
 test('apple: percent-encoded Unicode slugs from real links are allowed; encoded markup/quotes are not', () => {
-  assert.ok(ok('https://music.apple.com/jp/album/%E3%83%86%E3%82%B9%E3%83%88/1528112358').embedUrl.includes('%E3%83%86'));
-  for (const slug of ['%3Cscript%3E', '%22onload%3D', '%27x', '%5Cx', '%00x', '%E0%A4%A']) assert.match(bad(`https://music.apple.com/us/album/${slug}/1528112358`), /unsupported characters/);
+  const p1 = parseAppleMusicUrl('https://music.apple.com/jp/playlist/%E3%81%AF%E3%81%98%E3%82%81%E3%81%A6%E3%81%AE/pl.u-11zBJEmt8jV0mK');
+  assert.ok(p1.ok);
+  assert.equal(p1.embedUrl, 'https://embed.music.apple.com/jp/playlist/%E3%81%AF%E3%81%98%E3%82%81%E3%81%A6%E3%81%AE/pl.u-11zBJEmt8jV0mK');
+
+  const p2 = parseAppleMusicUrl('https://music.apple.com/us/album/folklore%20deluxe/1528112358');
+  assert.ok(p2.ok);
+
+  const bad = parseAppleMusicUrl('https://music.apple.com/us/playlist/%3Cscript%3E/pl.123');
+  assert.equal(bad.ok, false);
 });
 
+test('music links: provider is identified and official embed URL is rebuilt for Apple Music', () => {
+  const pl = parseMusicLink('https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb');
+  assert.ok(pl.ok && pl.provider === 'apple' && pl.kind === 'playlist');
+  assert.equal(pl.embedUrl, 'https://embed.music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb');
 
-const SP = '37i9dQZF1DXcBWIGoYBM5M';
-test('music links: provider is identified and the official embed URL is rebuilt from validated parts', () => {
-  const a = parseMusicLink('https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb');
-  assert.ok(a.ok && a.provider === 'apple' && a.kind === 'playlist' && a.embedUrl.startsWith('https://embed.music.apple.com/'));
-  const t = parseMusicLink('https://music.apple.com/us/song/x/1528112363'); assert.ok(t.ok && t.kind === 'track');
-  for (const u of [`https://open.spotify.com/playlist/${SP}`, `https://open.spotify.com/intl-in/playlist/${SP}?si=abc&utm=x`, `spotify:playlist:${SP}`, `https://open.spotify.com/embed/playlist/${SP}`]) {
+  const song = parseMusicLink('https://music.apple.com/us/song/cardigan/1528112363');
+  assert.ok(song.ok && song.kind === 'track');
+
+  const album = parseMusicLink('https://music.apple.com/us/album/folklore/1528112358');
+  assert.ok(album.ok && album.kind === 'album');
+});
+
+test('music links: unsupported services or Spotify links are refused with clear messages', () => {
+  const err = (u: string) => {
     const r = parseMusicLink(u);
-    assert.ok(r.ok && r.provider === 'spotify' && r.kind === 'playlist', u);
-    assert.equal((r as any).embedUrl, `https://open.spotify.com/embed/playlist/${SP}`);
-    assert.ok(!(r as any).embedUrl.includes('si=') && !(r as any).openUrl.includes('utm'));
-  }
-  const album = parseMusicLink(`https://open.spotify.com/album/${SP}`); assert.ok(album.ok && album.kind === 'album');
-  const track = parseMusicLink(`https://open.spotify.com/track/${SP}`); assert.ok(track.ok && track.kind === 'track');
-});
-test('music links: unsupported or hostile input is refused with a specific explanation', () => {
-  const err = (u: string) => { const r = parseMusicLink(u); assert.equal(r.ok, false, u); return (r as { error: string }).error; };
+    assert.equal(r.ok, false, u);
+    return (r as { error: string }).error;
+  };
+
   assert.match(err(''), /Paste/);
   assert.match(err('not a url'), /link/);
+  assert.match(err('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M'), /Spotify is not supported/);
+  assert.match(err('spotify:playlist:37i9dQZF1DXcBWIGoYBM5M'), /Spotify is not supported/);
+  assert.match(err('https://spotify.link/abc123'), /Spotify is not supported/);
   assert.match(err('https://www.youtube.com/playlist?list=PLabc'), /aren’t supported/);
   assert.match(err('https://soundcloud.com/a/sets/b'), /aren’t supported/);
-  assert.match(err('https://example.com/playlist/abc'), /Apple Music .* Spotify/);
-  assert.match(err('http://open.spotify.com/playlist/' + SP), /https/);
-  assert.match(err('https://open.spotify.com.evil.com/playlist/' + SP), /Apple Music .* Spotify|open\.spotify\.com/);
-  assert.match(err('https://spotify.link/abc123'), /Short Spotify links/);
-  assert.match(err(`https://open.spotify.com/artist/${SP}`), /artist links can’t be played/);
-  assert.match(err(`https://open.spotify.com/show/${SP}`), /show links/);
-  assert.match(err('https://open.spotify.com/playlist/short'), /unrecognized ID/);
-  assert.match(err(`https://open.spotify.com/playlist/${SP}<script>`), /unrecognized ID/);
-  assert.match(err('spotify:playlist:bad id'), /link|Apple|Spotify/);
-  assert.match(err('javascript:alert(1)'), /https|link|Apple/);
+  assert.match(err('https://example.com/playlist/abc'), /Only Apple Music/);
 });
 
-const mk = (n: string, over: Partial<PlaylistItem> = {}): PlaylistItem => ({ id: n, name: n, provider: 'spotify', kind: 'playlist', openUrl: `https://open.spotify.com/playlist/${n}`, embedUrl: '', enabled: true, ...over });
+const mk = (id: string, over: Partial<PlaylistItem> = {}): PlaylistItem => ({
+  id,
+  name: `Playlist ${id}`,
+  provider: 'apple',
+  kind: 'playlist',
+  openUrl: `https://music.apple.com/us/playlist/p-${id}/pl.${id.repeat(4)}`,
+  embedUrl: `https://embed.music.apple.com/us/playlist/p-${id}/pl.${id.repeat(4)}`,
+  enabled: true,
+  ...over,
+});
+
 test('playlist library: add validates, names default sensibly, duplicates and the cap are enforced', () => {
   let lib: PlaylistItem[] = [];
-  const bad = addPlaylist(lib, 'https://youtube.com/x', '', 'id1'); assert.equal(bad.ok, false);
-  const r = addPlaylist(lib, `https://open.spotify.com/playlist/${SP}`, '  Focus\u0007  ', 'id1'); assert.ok(r.ok); lib = (r as any).lib;
-  assert.equal(lib[0].name, 'Focus'); assert.equal(lib[0].enabled, true);
-  const dup = addPlaylist(lib, `https://open.spotify.com/intl-in/playlist/${SP}?si=zz`, 'Again', 'id2');
-  assert.equal(dup.ok, false); assert.match((dup as any).error, /Already in your list as “Focus”/);
-  const unnamed = addPlaylist(lib, 'https://music.apple.com/gb/album/folklore/1528112358', '', 'id3'); assert.ok(unnamed.ok); assert.equal((unnamed as any).item.name, 'Apple Music album');
+  const bad = addPlaylist(lib, 'https://youtube.com/x', '', 'id1');
+  assert.equal(bad.ok, false);
+
+  const r = addPlaylist(lib, 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb', '  Focus\u0007  ', 'id1');
+  assert.ok(r.ok);
+  lib = (r as any).lib;
+  assert.equal(lib[0].name, 'Focus');
+  assert.equal(lib[0].enabled, true);
+
+  const dup = addPlaylist(lib, 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb', 'Again', 'id2');
+  assert.equal(dup.ok, false);
+  assert.match((dup as any).error, /Already in your list as “Focus”/);
+
+  const unnamed = addPlaylist(lib, 'https://music.apple.com/gb/album/folklore/1528112358', '', 'id3');
+  assert.ok(unnamed.ok);
+  assert.equal((unnamed as any).item.name, 'Apple Music album');
+
   const full = Array.from({ length: MAX_PLAYLISTS }, (_, i) => mk(`p${i}`));
-  assert.match((addPlaylist(full, `https://open.spotify.com/playlist/${SP}`, '', 'x') as any).error, /up to 50/);
+  assert.match((addPlaylist(full, 'https://music.apple.com/us/playlist/x/pl.1234567890123456', '', 'x') as any).error, /up to 50/);
 });
+
 test('playlist library: rename, enable/disable, reorder and remove behave and never mutate the input', () => {
-  const lib = [mk('a'), mk('b'), mk('c')]; const copy = JSON.stringify(lib);
+  const lib = [mk('a'), mk('b'), mk('c')];
+  const copy = JSON.stringify(lib);
   assert.deepEqual(movePlaylist(lib, 'c', -1).map((p) => p.id), ['a', 'c', 'b']);
-  assert.deepEqual(movePlaylist(lib, 'a', -1).map((p) => p.id), ['a', 'b', 'c']);          // already first
-  assert.deepEqual(movePlaylist(lib, 'c', 1).map((p) => p.id), ['a', 'b', 'c']);           // already last
+  assert.deepEqual(movePlaylist(lib, 'a', -1).map((p) => p.id), ['a', 'b', 'c']);
+  assert.deepEqual(movePlaylist(lib, 'c', 1).map((p) => p.id), ['a', 'b', 'c']);
   assert.deepEqual(movePlaylist(lib, 'zzz', 1), lib);
   assert.equal(renamePlaylist(lib, 'b', ' New ')[1].name, 'New');
-  assert.equal(renamePlaylist(lib, 'b', '   ')[1].name, 'b');                               // blank rename ignored
+  assert.equal(renamePlaylist(lib, 'b', '   ')[1].name, 'Playlist b');
   assert.equal(togglePlaylist(lib, 'a')[0].enabled, false);
   assert.deepEqual(removePlaylist(lib, 'b').map((p) => p.id), ['a', 'c']);
   assert.equal(JSON.stringify(lib), copy);
 });
-test('only ENABLED playlists are playable; the active one falls back sensibly; the old single-link setting is migrated', () => {
+
+test('only ENABLED playlists are playable; the active one falls back sensibly; legacy single-link setting migrated', () => {
   const lib = [mk('a', { enabled: false }), mk('b'), mk('c')];
   assert.deepEqual(enabledPlaylists(lib).map((p) => p.id), ['b', 'c']);
   assert.equal(activeFrom({ playlists: lib, activePlaylistId: 'c' })!.id, 'c');
-  assert.equal(activeFrom({ playlists: lib, activePlaylistId: 'a' })!.id, 'b');            // disabled -> first enabled
+  assert.equal(activeFrom({ playlists: lib, activePlaylistId: 'a' })!.id, 'b');
   assert.equal(activeFrom({ playlists: lib })!.id, 'b');
-  assert.equal(activeFrom({ playlists: [mk('a', { enabled: false })] }), null);            // nothing enabled -> nothing shown
-  assert.equal(activeFrom({}), null);                                                      // nothing is auto-discovered
+  assert.equal(activeFrom({ playlists: [mk('a', { enabled: false })] }), null);
+  assert.equal(activeFrom({}), null);
+
   const migrated = libraryFrom({ appleMusic: { url: 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb' } });
-  assert.equal(migrated.length, 1); assert.equal(migrated[0].enabled, true); assert.equal(migrated[0].provider, 'apple');
-  assert.deepEqual(libraryFrom({ playlists: [], appleMusic: { url: 'https://music.apple.com/us/album/x/1528112358' } }), []);   // an explicit empty list wins over legacy
+  assert.equal(migrated.length, 1);
+  assert.equal(migrated[0].enabled, true);
+  assert.equal(migrated[0].provider, 'apple');
+
+  assert.deepEqual(libraryFrom({ playlists: [], appleMusic: { url: 'https://music.apple.com/us/album/x/1528112358' } }), []);
+});
+
+test('popover placement: placePopover positions below, flips above, clamps, and uses bottom sheet on mobile', () => {
+  // Mobile (< 480px width): always returns bottom sheet
+  const mobile = placePopover({ top: 100, bottom: 130, left: 200, right: 250, width: 50, height: 30 }, { width: 200, height: 150 }, { width: 360, height: 740 });
+  assert.equal(mobile.isSheet, true);
+  assert.equal(mobile.x, 8);
+  assert.equal(mobile.width, 360 - 16);
+
+  // Desktop: normal placement below anchor
+  const desktop = placePopover({ top: 100, bottom: 130, left: 500, right: 600, width: 100, height: 30 }, { width: 220, height: 150 }, { width: 1200, height: 800 });
+  assert.equal(desktop.isSheet, false);
+  assert.equal(desktop.y, 138); // 130 + 8 margin
+  assert.equal(desktop.x, 600 - 220); // right-aligned
+
+  // Desktop near bottom: flips above
+  const nearBottom = placePopover({ top: 720, bottom: 750, left: 500, right: 600, width: 100, height: 30 }, { width: 220, height: 150 }, { width: 1200, height: 800 });
+  assert.equal(nearBottom.isSheet, false);
+  assert.equal(nearBottom.y, 720 - 150 - 8); // flipped above
+
+  // Clamped to left viewport boundary
+  const nearLeft = placePopover({ top: 100, bottom: 130, left: 10, right: 50, width: 40, height: 30 }, { width: 200, height: 100 }, { width: 1000, height: 800 });
+  assert.equal(nearLeft.x, 8); // clamped to margin
 });

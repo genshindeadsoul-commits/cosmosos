@@ -7,7 +7,6 @@ import { TopBar } from './components/layout/TopBar';
 import { Sidebar } from './components/layout/Sidebar';
 import { GlobalSearchModal } from './components/common/GlobalSearchModal';
 import { QuickCaptureModal } from './components/common/QuickCaptureModal';
-import { FloatingMusicPlayer } from './components/music/FloatingMusicPlayer';
 import { ProfileModal } from './components/profile/ProfileModal';
 import { MailView } from './features/mail/MailView';
 import { AppleMusicWidget } from './components/music/AppleMusicWidget';
@@ -22,11 +21,9 @@ import { GoalsHabitsView } from './features/goals/GoalsHabitsView';
 import { CustomTrackersView } from './features/trackers/CustomTrackersView';
 import { TasksSchedulingView } from './features/tasks/TasksSchedulingView';
 import { SettingsView } from './features/settings/SettingsView';
-import { AdminView } from './features/admin/AdminView';
 
 const MainContent: React.FC = () => {
   const { activeModule, toasts, loadState, loadError, retryLoad, signOutUser } = useApp();
-  const { isAdmin } = useAuth();
 
   // Private modules mount only after this user's data has loaded; nothing from a previous account can render.
   if (loadState !== 'ready') {
@@ -59,7 +56,6 @@ const MainContent: React.FC = () => {
       case 'tasks': return <TasksSchedulingView />;
       case 'mail': return <MailView />;
       case 'settings': return <SettingsView />;
-      case 'admin': return isAdmin ? <AdminView /> : <DashboardView />;
       default: return <DashboardView />;
     }
   };
@@ -74,7 +70,6 @@ const MainContent: React.FC = () => {
 
       <GlobalSearchModal />
       <QuickCaptureModal />
-      <FloatingMusicPlayer />
       <ProfileModal />
       <AppleMusicWidget />
 

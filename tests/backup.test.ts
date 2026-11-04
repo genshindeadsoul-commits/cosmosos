@@ -12,11 +12,12 @@ const sample = (): CosmosAppData => ({
   transactions: [{ id: newId(), type: 'expense', category: 'Dining', description: 'Lunch', amount: 12.5, date: '2026-10-19' }],
   tables: [{ id: tbl, name: 'T', description: '', updatedAt: '', columns: [{ id: 'c1', name: 'A', type: 'text' }], rows: [{ id: newId(), c1: 'x' }] }],
 });
-const SP = '37i9dQZF1DXcBWIGoYBM5M';
+const APPLE_PL = 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
+const APPLE_EMBED = 'https://embed.music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
 
 test('backup: build -> parse round-trips every list, the version, the date, and the settings', () => {
   const d = sample();
-  const json = buildBackupJson(d, { theme: 'dark', mailFolder: 'sent', playlists: [{ id: 'p1', name: 'Focus', provider: 'spotify', kind: 'playlist', openUrl: `https://open.spotify.com/playlist/${SP}`, embedUrl: `https://open.spotify.com/embed/playlist/${SP}`, enabled: true }], activePlaylistId: 'p1' }, new Date('2026-10-23T09:30:00Z'));
+  const json = buildBackupJson(d, { theme: 'dark', mailFolder: 'sent', playlists: [{ id: 'p1', name: 'Focus', provider: 'apple', kind: 'playlist', openUrl: APPLE_PL, embedUrl: APPLE_EMBED, enabled: true }], activePlaylistId: 'p1' }, new Date('2026-10-23T09:30:00Z'));
   const r = parseBackup(json);
   assert.ok(r.ok); if (!r.ok) return;
   assert.deepEqual(r.data, d);
@@ -63,7 +64,7 @@ test('backup settings are re-validated: tampered links, layout numbers, theme, a
   const s = sanitizeSettings({
     theme: 'neon', mailFolder: '../../x', evil: { a: 1 },
     playlists: [
-      { id: 'ok1', name: '  Good\u0007  ', openUrl: `https://open.spotify.com/playlist/${SP}`, embedUrl: 'https://evil.example/steal', enabled: true },
+      { id: 'ok1', name: '  Good\u0007  ', openUrl: APPLE_PL, embedUrl: 'https://evil.example/steal', enabled: true },
       { id: 'bad', name: 'Bad', openUrl: 'javascript:alert(1)', embedUrl: 'javascript:alert(1)' },
       { id: 'bad2', name: 'Bad2', openUrl: 'https://evil.example/playlist/1' },
       { name: 5, openUrl: 'https://music.apple.com/us/album/x/1528112358' },
@@ -73,8 +74,8 @@ test('backup settings are re-validated: tampered links, layout numbers, theme, a
   });
   assert.equal(s.theme, undefined); assert.equal(s.mailFolder, undefined); assert.ok(!('evil' in s));
   assert.equal(s.playlists!.length, 2);
-  assert.equal(s.playlists![0].name, 'Good'); assert.equal(s.playlists![0].embedUrl, `https://open.spotify.com/embed/playlist/${SP}`);   // rebuilt, not trusted
-  assert.ok(s.playlists!.every((p) => /^https:\/\/(open\.spotify\.com|music\.apple\.com)\//.test(p.openUrl) && /^https:\/\/(open\.spotify\.com\/embed|embed\.music\.apple\.com)\//.test(p.embedUrl)));
+  assert.equal(s.playlists![0].name, 'Good'); assert.equal(s.playlists![0].embedUrl, APPLE_EMBED);   // rebuilt, not trusted
+  assert.ok(s.playlists!.every((p) => /^https:\/\/music\.apple\.com\//.test(p.openUrl) && /^https:\/\/embed\.music\.apple\.com\//.test(p.embedUrl)));
   assert.equal(s.playlists![1].name, 'Playlist'); assert.ok(s.playlists![1].id.length > 10);
   assert.equal(s.activePlaylistId, 'ok1');
   assert.deepEqual(s.appleMusic, { x: 0, y: 10000, w: 280, h: 640, mode: undefined, visible: undefined });

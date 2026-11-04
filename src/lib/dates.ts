@@ -1,5 +1,5 @@
 const pad = (n: number) => String(n).padStart(2, '0');
-export const dayKey = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;          // m is 0-based
+export const dayKey = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`; // m is 0-based
 export const todayKey = (now = new Date()) => dayKey(now.getFullYear(), now.getMonth(), now.getDate());
 export const daysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
 /** Blank cells before day 1. weekStart 1 = Monday-first, 0 = Sunday-first. */
@@ -15,3 +15,9 @@ export function currentWeek(now = new Date()) {
   });
 }
 export const addMonthsKey = (key: string, months: number) => { const [y, m, d] = key.split('-').map(Number); const t = new Date(y, m - 1 + months, 1); return dayKey(t.getFullYear(), t.getMonth(), Math.min(d, daysInMonth(t.getFullYear(), t.getMonth()))); };
+
+export const dateNoteTitle = (dateKey: string) => `Notes for ${dateKey}`;
+export const dateNoteContent = (dateKey: string) => `# Notes for ${dateKey}\n\n`;
+export const isUntouchedDateNote = (note: { title: string; content: string }, dateKey: string) =>
+  note.title === dateNoteTitle(dateKey) &&
+  (!note.content || note.content.trim() === '' || note.content.trim() === dateNoteContent(dateKey).trim());

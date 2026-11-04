@@ -136,11 +136,11 @@ describe('empty account', () => {
     await user.click(within(screen.getByRole('navigation', { name: 'Main Navigation' })).getByRole('button', { name: /Settings/ }));
     expect(document.body.textContent).toMatch(/Light/);
   });
-  it('admin sees Admin nav only when the DB says so', async () => {
+  it('admin section is completely removed even when the user is an admin in DB', async () => {
     fake.setUser({ id: 'adm', email: 'boss@x.dev' }, true);
     render(<App />);
     await screen.findAllByText('Dashboard');
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Admin/ })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /^Admin/ })).toBeNull();
   });
 });
 
@@ -425,15 +425,14 @@ describe('integrations (UI against mocked server functions)', () => {
     expect(screen.queryAllByText('Connected')).toHaveLength(0);
   });
 
-  it('Spotify selected but not connected: player says so and Play does not pretend to play', async () => {
+  it('Spotify is completely removed from Settings and the UI: only Apple Music integration exists', async () => {
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
-    fake.fnHandlers['spotify-token'] = () => ({ __error: { error: 'not_connected', message: 'Not connected.' } });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    await user.click(screen.getByRole('button', { name: 'Toggle Focus Sound & Music Player' }));
-    await user.click(await screen.findByRole('button', { name: /spotify/i }));
-    expect(await screen.findByText(/Connect in Settings/)).toBeTruthy();
-    expect(document.body.textContent).not.toMatch(/Authorized Client|Spotify Editorial/);
+    await gotoSettings(user);
+    expect(screen.queryByText(/Spotify/i)).toBeNull();
+    expect(screen.queryByText(/Ambient/i)).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Music & Playlists' })).toBeTruthy();
   });
 });
 
@@ -609,11 +608,11 @@ class PE extends MouseEvent { pointerId: number; constructor(t: string, i: any =
 const PL = 'https://music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
 const PL_EMBED = 'https://embed.music.apple.com/us/playlist/todays-hits/pl.f4d106fed2bd41149aaacabb233eb5eb';
 const APPLE_ITEM = { id: '99999999-9999-4999-8999-999999999991', name: 'Today’s Hits', provider: 'apple', kind: 'playlist', openUrl: PL, embedUrl: PL_EMBED, enabled: true };
-const SP_ID = '37i9dQZF1DXcBWIGoYBM5M';
-const SPOTIFY_ITEM = { id: '99999999-9999-4999-8999-999999999992', name: 'Deep Focus', provider: 'spotify', kind: 'playlist', openUrl: `https://open.spotify.com/playlist/${SP_ID}`, embedUrl: `https://open.spotify.com/embed/playlist/${SP_ID}`, enabled: true };
+const APPLE_ITEM_2 = { id: '99999999-9999-4999-8999-999999999992', name: 'Chill Vibes', provider: 'apple', kind: 'playlist', openUrl: 'https://music.apple.com/us/playlist/chill/pl.u-1111', embedUrl: 'https://embed.music.apple.com/us/playlist/chill/pl.u-1111', enabled: true };
+const APPLE_ITEM_3 = { id: '99999999-9999-4999-8999-999999999993', name: 'Hidden one', provider: 'apple', kind: 'playlist', openUrl: 'https://music.apple.com/us/playlist/hidden/pl.u-2222', embedUrl: 'https://embed.music.apple.com/us/playlist/hidden/pl.u-2222', enabled: false };
 const prefsOf = (preferences: any, uid = 'u1') => ({ user_settings: [{ user_id: uid, preferences }] });
 const hub = async (user: ReturnType<typeof userEvent.setup>) => { await user.click(screen.getByRole('button', { name: 'Toggle Focus Sound & Music Player' })); };
-const openApple = async (user: ReturnType<typeof userEvent.setup>) => { await hub(user); await user.click(await screen.findByRole('button', { name: 'Playlists' })); };
+const openApple = async (user: ReturnType<typeof userEvent.setup>) => { await hub(user); };
 const widget = () => screen.queryByRole('region', { name: /^(Apple Music|Spotify|Music player)$/ }) as HTMLElement | null;
 const frame = () => document.querySelector('iframe[title$=" player"]') as HTMLIFrameElement | null;   // Apple Music or Spotify embed
 const savedPrefs = () => fake.db['u1']?.user_settings?.[0]?.preferences?.appleMusic;
@@ -694,7 +693,7 @@ describe('Apple Music widget (official embed)', () => {
   });
 
   it('the picker lists only ENABLED playlists, swaps the embed, and shows the loading state until the frame fires load', async () => {
-    fake.db['u1'] = prefsOf({ playlists: [APPLE_ITEM, { ...SPOTIFY_ITEM, enabled: true }, { ...SPOTIFY_ITEM, id: '99999999-9999-4999-8999-999999999993', name: 'Hidden one', openUrl: 'https://open.spotify.com/playlist/x', enabled: false }], appleMusic: { visible: true, mode: 'compact' } });
+    fake.db['u1'] = prefsOf({ playlists: [APPLE_ITEM, APPLE_ITEM_2, APPLE_ITEM_3], appleMusic: { visible: true, mode: 'compact' } });
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
@@ -703,12 +702,12 @@ describe('Apple Music widget (official embed)', () => {
     fireEvent.load(frame()!);
     await waitFor(() => expect(within(widget()!).queryByRole('status')).toBeNull());
     const picker = within(widget()!).getByLabelText('Playlist') as HTMLSelectElement;
-    expect([...picker.options].map((o) => o.textContent)).toEqual(['Today’s Hits (Apple Music)', 'Deep Focus (Spotify)']);   // the disabled one never appears
-    await user.selectOptions(picker, SPOTIFY_ITEM.id);
-    await waitFor(() => expect(frame()!.getAttribute('src')).toBe(SPOTIFY_ITEM.embedUrl));
-    expect(frame()!.getAttribute('title')).toBe('Spotify player');
-    expect(screen.getByRole('link', { name: 'Open in Spotify' }).getAttribute('href')).toBe(SPOTIFY_ITEM.openUrl);
-    await waitFor(() => expect(fake.db['u1'].user_settings[0].preferences.activePlaylistId).toBe(SPOTIFY_ITEM.id), { timeout: 4000 });
+    expect([...picker.options].map((o) => o.textContent)).toEqual(['Today’s Hits', 'Chill Vibes']);   // the disabled one never appears
+    await user.selectOptions(picker, APPLE_ITEM_2.id);
+    await waitFor(() => expect(frame()!.getAttribute('src')).toBe(APPLE_ITEM_2.embedUrl));
+    expect(frame()!.getAttribute('title')).toBe('Apple Music player');
+    expect(screen.getByRole('link', { name: 'Open in Apple Music' }).getAttribute('href')).toBe(APPLE_ITEM_2.openUrl);
+    await waitFor(() => expect(fake.db['u1'].user_settings[0].preferences.activePlaylistId).toBe(APPLE_ITEM_2.id), { timeout: 4000 });
     await user.selectOptions(within(widget()!).getByLabelText('Playlist'), APPLE_ITEM.id);
     await waitFor(() => expect(frame()!.getAttribute('src')).toBe(PL_EMBED));
     expect(screen.getByRole('link', { name: 'Open in Apple Music' }).getAttribute('href')).toBe(PL);
@@ -792,11 +791,11 @@ describe('Settings → Music & Playlists', () => {
     await user.click(screen.getByRole('button', { name: 'Add' }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/aren’t supported/);
     expect(prefsNow()?.playlists).toBeUndefined();                                       // nothing saved for a bad link
-    await user.clear(l); await user.type(l, `https://open.spotify.com/playlist/${SP_ID}?si=zzz`);
-    expect(screen.getByText('Recognized: Spotify playlist.')).toBeTruthy();
-    await add(user, `https://open.spotify.com/playlist/${SP_ID}?si=zzz`, 'Deep Focus');
+    await user.clear(l); await user.type(l, 'https://music.apple.com/us/playlist/chill-mix/pl.u-a1b2c3d4e5');
+    expect(screen.getByText('Recognized: Apple Music playlist.')).toBeTruthy();
+    await add(user, 'https://music.apple.com/us/playlist/chill-mix/pl.u-a1b2c3d4e5', 'Deep Focus');
     await screen.findByLabelText('Name for Deep Focus');
-    await add(user, `https://open.spotify.com/intl-in/playlist/${SP_ID}`);
+    await add(user, 'https://music.apple.com/us/playlist/chill-mix/pl.u-a1b2c3d4e5');
     expect((await screen.findByRole('alert')).textContent).toMatch(/Already in your list as “Deep Focus”/);
     expect(screen.getAllByLabelText(/^Name for /)).toHaveLength(1);
   });
@@ -807,7 +806,7 @@ describe('Settings → Music & Playlists', () => {
     render(<App />); await screen.findAllByText('Dashboard');
     await goSettings(user);
     await add(user, PL, 'Hits');
-    await add(user, `https://open.spotify.com/playlist/${SP_ID}`, 'Focus');
+    await add(user, 'https://music.apple.com/us/playlist/chill-mix/pl.u-a1b2c3d4e5', 'Focus');
     await add(user, 'https://music.apple.com/gb/album/folklore/1528112358');                  // unnamed -> sensible default name
     await screen.findByLabelText('Name for Apple Music album');
     expect(screen.getAllByLabelText(/^Name for /).map((e) => (e as HTMLInputElement).value)).toEqual(['Hits', 'Focus', 'Apple Music album']);
@@ -832,20 +831,15 @@ describe('Settings → Music & Playlists', () => {
     expect((screen.getByRole('button', { name: 'Play Focus' }) as HTMLButtonElement).disabled).toBe(true);   // can't play a disabled one
   });
 
-  it('switching hub tabs (ambient/Spotify) or editing OTHER playlists never remounts the playing Apple Music iframe', async () => {
+  it('editing OTHER playlists never remounts the playing Apple Music iframe', async () => {
     fake.db['u1'] = prefsOf({ playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } });
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
     await waitFor(() => expect(frame()).toBeTruthy());
     const node = frame()!;
-    await hub(user);
-    await user.click(await screen.findByRole('button', { name: 'Spotify' }));
-    expect(frame()).toBe(node);
-    await user.click(screen.getByRole('button', { name: /Ambient/ }));
-    expect(frame()).toBe(node);
     await goSettings(user);
-    await add(user, `https://open.spotify.com/playlist/${SP_ID}`, 'Other');
+    await add(user, 'https://music.apple.com/us/playlist/chill-mix/pl.u-a1b2c3d4e5', 'Other');
     await screen.findByLabelText('Name for Other');
     await user.click(screen.getByRole('switch', { name: 'Enable Other' }));
     await user.click(screen.getByRole('button', { name: 'Move Other up' }));
@@ -853,31 +847,39 @@ describe('Settings → Music & Playlists', () => {
     expect(frame()!.getAttribute('src')).toBe(PL_EMBED);
   });
 
-  it('a Spotify playlist plays in Spotify’s embed with an honest sign-in note, and disabling the active one falls back or empties the hub', async () => {
-    fake.db['u1'] = prefsOf({ playlists: [SPOTIFY_ITEM], appleMusic: { visible: true, mode: 'compact' } });
+  it('topbar music player button toggles the widget open and closed', async () => {
+    fake.db['u1'] = prefsOf({ playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } });
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
-    await waitFor(() => expect(frame()?.getAttribute('src')).toBe(SPOTIFY_ITEM.embedUrl));
-    fireEvent.load(frame()!);
-    expect(await screen.findByText(/full songs only if you’re signed in to Spotify/)).toBeTruthy();
-    expect(frame()!.getAttribute('allow')).toMatch(/encrypted-media/);
-    await goSettings(user);
-    await user.click(screen.getByRole('switch', { name: 'Enable Deep Focus' }));
-    await waitFor(() => expect(frame()).toBeNull());
-    expect(within(screen.getByRole('region', { name: 'Music player' })).getByText('No playlists enabled')).toBeTruthy();
+    await waitFor(() => expect(frame()).toBeTruthy());
+    // clicking music player button in TopBar toggles closed
+    await hub(user);
+    expect(screen.queryAllByRole('region', { name: /Music player|Apple Music/ })).toHaveLength(0);
+    // clicking again toggles open
+    await hub(user);
+    expect(screen.getAllByRole('region', { name: /Music player|Apple Music/ })).toHaveLength(1);
   });
 
-  it('Spotify connect/disconnect lives here and reflects the real connection state', async () => {
-    fake.db['u1'] = { integration_connections: [{ id: 'c1', provider: 'spotify', status: 'connected', account_label: 'me@x.com', last_synced_at: null, last_error: null, granted_scopes: [] }] };
+  it('opening the player repeatedly focuses the singleton and never creates another window', async () => {
+    fake.db['u1'] = prefsOf({ playlists: [APPLE_ITEM], appleMusic: { visible: true, mode: 'compact' } });
     fake.setUser({ id: 'u1', email: 'alice@x.dev' });
-    fake.fnHandlers['oauth-disconnect'] = () => ({ ok: true });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await waitFor(() => expect(frame()).toBeTruthy());
+    expect(screen.getAllByRole('region', { name: /Music player|Apple Music/ })).toHaveLength(1);
+    await goSettings(user);
+    await user.click(screen.getByRole('button', { name: 'Play Today’s Hits' }));
+    expect(screen.getAllByRole('region', { name: /Music player|Apple Music/ })).toHaveLength(1);
+  });
+
+  it('Spotify and ambient player are completely removed from Settings and integrations', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const user = userEvent.setup();
     render(<App />); await screen.findAllByText('Dashboard');
     await goSettings(user);
-    await waitFor(() => expect(screen.getByText(/connected as me@x\.com/)).toBeTruthy());
-    await user.click(screen.getByRole('button', { name: 'Disconnect Spotify' }));
-    await waitFor(() => expect(fake.fnCalls.some((c) => c.name === 'oauth-disconnect' && c.body.provider === 'spotify')).toBe(true));
+    expect(screen.queryByText(/Spotify/i)).toBeNull();
+    expect(screen.queryByText(/Ambient/i)).toBeNull();
   });
 
   it('a playlist saved by the earlier single-link version is carried over, not lost', async () => {
@@ -1075,6 +1077,7 @@ describe('Settings → Backup & Restore (Google Drive)', () => {
   });
 
   it('damaged, truncated, newer-format, or non-backup files are refused with a reason and change nothing', async () => {
+    cleanup(); localStorage.clear();
     seed(); fake.setUser({ id: 'u1', email: 'alice@x.dev' });
     const ok = JSON.parse(backupOf());
     const mk = (id: string, name: string, content: string): Stored => ({ id, name, content, createdTime: '2026-10-22T08:00:00Z' });
@@ -1125,7 +1128,6 @@ describe('themes and console health on the changed screens', () => {
       for (const label of [/Tables/, /Goals & Habits/, /Dashboard/, /Expenses/, /Fitness/, /Custom Trackers/]) await user.click(NAVBTN(label));
       await user.click(screen.getByRole('button', { name: /^Gmail/ }));
       await screen.findByRole('navigation', { name: 'Mail folders' });
-      await hub(user); await screen.findByRole('button', { name: 'Playlists' }); await hub(user);
       expect(widget()).toBeTruthy();
     }
     spy.mockRestore();
@@ -1158,5 +1160,47 @@ describe('themes and console health on the changed screens', () => {
     expect(toggles).toHaveLength(7);
     await user.click(screen.getByRole('button', { name: `Toggle Walk for ${key}` }));
     await waitFor(() => expect(fake.db['u1'].habit_checkins).toHaveLength(1), { timeout: 4000 });
+  });
+
+  it('calendar date notes: adding a note for a calendar date navigates to Notes and sets noteDate', async () => {
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    const now = new Date();
+    const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    // click today on dashboard calendar
+    await user.click(screen.getByRole('button', { name: key }));
+    const addDateNoteBtn = await screen.findByRole('button', { name: 'Add note for this date' });
+    expect(addDateNoteBtn).toBeTruthy();
+    await user.click(addDateNoteBtn);
+    // navigated to notes
+    await waitFor(() => expect(window.location.pathname).toBe('/notes'));
+    expect(screen.getAllByText(`Notes for ${key}`).length).toBeGreaterThanOrEqual(1);
+    expect((screen.getByLabelText('Note date') as HTMLInputElement).value).toBe(key);
+  });
+
+  it('fitness view formats missing duration/calories with dash and shows Imported badge', async () => {
+    fake.db['u1'] = {
+      workouts: [
+        {
+          id: 'w-imp-1',
+          user_id: 'u1',
+          title: 'Morning Health Connect Run',
+          workout_date: '2026-11-04',
+          duration_minutes: null,
+          calories: null,
+          exercises: [],
+          source: 'health_connect',
+          external_id: 'hc-999',
+        },
+      ],
+    };
+    fake.setUser({ id: 'u1', email: 'alice@x.dev' });
+    const user = userEvent.setup();
+    render(<App />); await screen.findAllByText('Dashboard');
+    await user.click(NAVBTN(/Fitness/));
+    expect(await screen.findByText('Morning Health Connect Run')).toBeTruthy();
+    expect(screen.getByText('Imported')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 });

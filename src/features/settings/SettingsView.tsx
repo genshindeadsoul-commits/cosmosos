@@ -32,14 +32,13 @@ import { DriveBackupPanel } from './DriveBackupPanel';
 export const SettingsView: React.FC = () => {
   const {
     exportBackup,
-    openMusicWidget,
+    openMusicHub,
     importBackup,
     resetAllData,
     themePreference,
     setThemePreference,
     effectiveTheme,
     setActiveModule,
-    toggleMusicPlayer,
     showToast,
   } = useApp();
   const { integrations, connect, disconnect, sync, busy } = useIntegrations();
@@ -349,7 +348,7 @@ export const SettingsView: React.FC = () => {
 
                       {item.id === 'apple_music' && (
                         <button
-                          onClick={openMusicWidget}
+                          onClick={openMusicHub}
                           className="flex items-center gap-1.5 rounded-lg bg-[#252821] dark:bg-[#383D35] px-3 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
                         >
                           <Disc className="h-3 w-3" />
@@ -357,13 +356,14 @@ export const SettingsView: React.FC = () => {
                         </button>
                       )}
 
-                      {item.id === 'spotify' && (
+                      {item.id === 'health' && (
                         <button
-                          onClick={toggleMusicPlayer}
-                          className="flex items-center gap-1.5 rounded-lg bg-[#252821] dark:bg-[#383D35] px-3 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
+                          onClick={() => sync(item.id)}
+                          disabled={busy === item.id}
+                          className="flex items-center gap-1.5 rounded-lg bg-[#3D5240] hover:bg-[#2E3F31] dark:bg-[#526B55] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition-colors disabled:opacity-50"
                         >
-                          <Music className="h-3 w-3" />
-                          <span>Open Mini-Player</span>
+                          <RefreshCw className={`h-3 w-3 ${busy === item.id ? 'animate-spin' : ''}`} />
+                          <span>{busy === item.id ? 'Checking…' : 'Check for new data'}</span>
                         </button>
                       )}
                     </div>

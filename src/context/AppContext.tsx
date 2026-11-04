@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   ModuleType,
   Task,
@@ -13,7 +13,6 @@ import {
   Habit,
   CustomTracker,
   IntegrationAccount,
-  MusicPlayerState,
   ThemePreference,
   UserProfile,
   GmailMessage,
@@ -26,10 +25,8 @@ import { exportCosmosBackup, parseBackup } from '../data/backup';
 import { useAuth } from './AuthContext';
 import { nextOccurrence } from '../lib/recurrence';
 import type { ImportedEvent } from '../lib/integrationsApi';
-import * as spotify from '../lib/spotifyPlayer';
 import { supabase } from '../lib/supabase';
-import { ambientAudio } from '../lib/ambientAudio';
-import { musicRegistry } from '../lib/musicAdapters';
+import { dateNoteTitle, dateNoteContent, isUntouchedDateNote } from '../lib/dates';
 
 interface Toast {
   id: string;
@@ -82,6 +79,7 @@ interface AppContextType {
   selectedNoteId: string | null;
   setSelectedNoteId: (id: string | null) => void;
   addNote: (note: Omit<Note, 'id' | 'createdAt' | 'updatedAt'>) => string;
+  addDateNote: (date: string) => Note;
   updateNote: (note: Note) => void;
   deleteNote: (id: string) => void;
   toggleStarNote: (id: string) => void;
@@ -123,8 +121,7 @@ interface AppContextType {
   
   
   importCalendarEvents: (incoming: ImportedEvent[]) => { added: number; updated: number };
-  musicWidgetRequest: number;
-  openMusicWidget: () => void;
+  refreshImportedWorkouts: () => Promise<void>;
   focusRecord: { kind: string; id: string } | null;
   setFocusRecord: (r: { kind: string; id: string } | null) => void;
   signOutUser: () => Promise<void>;
@@ -153,17 +150,12 @@ interface AppContextType {
   quickCaptureTab: 'task' | 'note' | 'expense' | 'workout' | 'habit';
   openQuickCapture: (tab?: 'task' | 'note' | 'expense' | 'workout' | 'habit') => void;
   
-  // Provider-Aware Music Player
-  musicState: MusicPlayerState;
-  setMusicState: React.Dispatch<React.SetStateAction<MusicPlayerState>>;
-  toggleMusicPlayer: () => void;
-  toggleMusicPlayback: () => void;
-  setMusicVolume: (vol: number) => void;
-  setMusicPreset: (preset: 'forest' | 'rain' | 'alpha' | 'celestial') => void;
-  switchMusicProvider: (provider: 'ambient' | 'spotify') => void;
-  nextMusicTrack: () => void;
-  prevMusicTrack: () => void;
-  openExternalMusicApp: () => void;
+  // Music Hub (Single floating player)
+  musicHub: { open: boolean; minimized: boolean; focusTick: number };
+  toggleMusicHub: () => void;
+  openMusicHub: () => void;
+  closeMusicHub: () => void;
+  setMusicMinimized: (minimized: boolean) => void;
   
   // Focus Timer
   focusDurationMins: number;
@@ -182,7 +174,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const ROUTABLE: ModuleType[] = ['dashboard', 'notes', 'tables', 'expenses', 'fitness', 'goals', 'trackers', 'tasks', 'mail', 'settings', 'admin'];
+const ROUTABLE: ModuleType[] = ['dashboard', 'notes', 'tables', 'expenses', 'fitness', 'goals', 'trackers', 'tasks', 'mail', 'settings'];
 export const moduleFromPath = (pathname: string): ModuleType => {
   const seg = pathname.replace(/^\/+|\/+$/g, '').split('/')[0] as ModuleType;
   return ROUTABLE.includes(seg) ? seg : 'dashboard';
@@ -261,7 +253,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   
   // User Profile: derived from the authenticated account, never hardcoded.
-  const { user, isAdmin, signOut: authSignOut } = useAuth();
+  const { user, signOut: authSignOut } = useAuth();
   const [displayName, setDisplayName] = useState<string>(
     () => (user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User') as string
   );
@@ -270,9 +262,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     email: user?.email ?? '',
     workspaceName: `${displayName}'s Workspace`,
     avatarInitials: (displayName.trim()[0] ?? 'U').toUpperCase(),
-    role: isAdmin ? 'Administrator' : 'Member',
+    role: 'Member',
     accountType: 'Cloud Synchronized',
-  }), [displayName, user?.email, isAdmin]);
+  }), [displayName, user?.email]);
 
   const [isProfileOpen, setProfileOpen] = useState(false);
 
@@ -309,24 +301,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isQuickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [quickCaptureTab, setQuickCaptureTab] = useState<'task' | 'note' | 'expense' | 'workout' | 'habit'>('task');
   
-  // Music Player
-  const [musicState, setMusicState] = useState<MusicPlayerState>(() => {
-    const activeProvider = musicRegistry.getActiveProvider();
-    const initialState = musicRegistry.getCurrentPlaybackState('forest');
-    return {
-      isOpen: false,
-      isMinimized: false,
-      provider: activeProvider,
-      isPlaying: false,
-      currentTrack: initialState.currentTrack,
-      artist: initialState.artist,
-      progressSeconds: initialState.progressSeconds,
-      durationSeconds: initialState.durationSeconds,
-      volume: 0.6,
-      ambientPreset: 'forest',
-      externalStatus: 'unknown',
-    };
+  // Music Hub (Single floating player, non-persisted visibility)
+  const [musicHub, setMusicHub] = useState<{ open: boolean; minimized: boolean; focusTick: number }>({
+    open: false,
+    minimized: false,
+    focusTick: 0,
   });
+  const toggleMusicHub = useCallback(() => {
+    setMusicHub((prev) => {
+      if (!prev.open) return { open: true, minimized: false, focusTick: prev.focusTick + 1 };
+      if (!prev.minimized) return { open: true, minimized: true, focusTick: prev.focusTick };
+      return { open: true, minimized: false, focusTick: prev.focusTick + 1 };
+    });
+  }, []);
+  const openMusicHub = useCallback(() => {
+    setMusicHub((prev) => ({ open: true, minimized: false, focusTick: prev.focusTick + 1 }));
+  }, []);
+  const closeMusicHub = useCallback(() => {
+    setMusicHub((prev) => ({ open: false, minimized: false, focusTick: prev.focusTick }));
+  }, []);
+  const setMusicMinimized = useCallback((minimized: boolean) => {
+    setMusicHub((prev) => ({ ...prev, minimized }));
+  }, []);
 
   // Focus Timer
   const [focusDurationMins, setFocusDurationMins] = useState(30);
@@ -496,105 +492,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setFocusSecondsLeft(focusDurationMins * 60);
   };
 
-  // Provider-Aware Music Player Actions
-  const toggleMusicPlayer = () => {
-    setMusicState((prev) => ({ ...prev, isOpen: !prev.isOpen }));
-  };
+  // Date-associated notes (Calendar <-> Notes)
+  const lastDateNoteRef = useRef<Map<string, { note: Note; timestamp: number }>>(new Map());
+  const addDateNote = useCallback((dateKey: string): Note => {
+    const now = Date.now();
+    const cached = lastDateNoteRef.current.get(dateKey);
+    if (cached && now - cached.timestamp < 1500) {
+      return cached.note;
+    }
+    const currentNotes = data?.notes ?? [];
+    const existingUntouched = currentNotes.find((n: Note) => n.noteDate === dateKey && isUntouchedDateNote(n, dateKey));
+    if (existingUntouched) {
+      lastDateNoteRef.current.set(dateKey, { note: existingUntouched, timestamp: now });
+      return existingUntouched;
+    }
+    const newNote: Note = {
+      id: newId(),
+      title: dateNoteTitle(dateKey),
+      content: dateNoteContent(dateKey),
+      excerpt: dateNoteTitle(dateKey),
+      tags: ['Daily'],
+      noteDate: dateKey,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setData((prev) => (prev ? { ...prev, notes: [newNote, ...prev.notes] } : prev));
+    lastDateNoteRef.current.set(dateKey, { note: newNote, timestamp: now });
+    return newNote;
+  }, [data?.notes]);
 
-  // ---- External providers: every state shown comes from a real provider response ----
-  const explainExternalError = (e: unknown): { status: MusicPlayerState['externalStatus']; message: string } => {
-    const err = e as { code?: string; message?: string };
-    if (err.code === 'not_connected' || err.code === 'needs_reauthorization' || err.code === 'auth') return { status: 'not_connected', message: err.message ?? 'Not connected.' };
-    if (err.code === 'not_configured' || err.code === 'function_unavailable') return { status: 'error', message: err.message ?? 'Server setup incomplete.' };
-    return { status: 'error', message: err.message ?? 'Something went wrong.' };
-  };
-
-  const refreshExternalPlayback = async (provider: 'spotify', quiet = false) => {
+  // Refresh imported workouts (Health Connect / Google Fit)
+  const refreshImportedWorkouts = useCallback(async () => {
+    if (!user?.id || !supabase) return;
     try {
-      const st = await spotify.getSpotifyState();
-      setMusicState((prev) => prev.provider !== 'spotify' ? prev : {
-        ...prev, isPlaying: st?.isPlaying ?? false, currentTrack: st?.track ?? 'Nothing playing',
-        artist: st ? st.artist : 'Open Spotify on a device to start', progressSeconds: st?.progressSec ?? 0, durationSeconds: st?.durationSec ?? 0,
-        spotifyActiveDevice: st?.device, externalStatus: 'ok', externalMessage: st ? undefined : 'No active device. Open Spotify and start playing.',
+      const { data: rows, error } = await supabase
+        .from('workouts')
+        .select('*')
+        .eq('user_id', user.id)
+        .or('source.not.is.null,external_id.not.is.null');
+      if (error || !rows) return;
+      const imported: WorkoutLog[] = rows.map((w: any) => ({
+        id: String(w.id),
+        title: String(w.title),
+        date: String(w.workout_date).slice(0, 10),
+        durationMinutes: w.duration_minutes == null ? null : Number(w.duration_minutes),
+        calories: w.calories == null ? null : Number(w.calories),
+        exercises: (w.exercises as WorkoutLog['exercises']) ?? [],
+        notes: (w.notes as string) ?? undefined,
+        source: (w.source as string) ?? undefined,
+        externalId: (w.external_id as string) ?? undefined,
+      }));
+      if (imported.length === 0) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const existingIds = new Set(prev.workouts.map((w: WorkoutLog) => w.id));
+        const toAdd = imported.filter((w) => !existingIds.has(w.id));
+        const updated = prev.workouts.map((w: WorkoutLog) => {
+          const match = imported.find((m) => m.id === w.id);
+          return match ?? w;
+        });
+        return { ...prev, workouts: [...updated, ...toAdd] };
       });
-    } catch (e) {
-      const x = explainExternalError(e);
-      setMusicState((prev) => prev.provider !== provider ? prev : { ...prev, isPlaying: false, currentTrack: `Spotify: ${x.status === 'not_connected' ? 'not connected' : 'unavailable'}`, artist: '', externalStatus: x.status, externalMessage: x.message });
-      if (!quiet) showToast(x.message, 'warning');
-    }
-  };
-
-  // Apple Music is a separate floating widget (official embed). It exposes no playback API to us.
-  const [musicWidgetRequest, setMusicWidgetRequest] = useState(0);
-  const openMusicWidget = () => setMusicWidgetRequest((n) => n + 1);
-
-  const externalCommand = async (cmd: 'toggle' | 'next' | 'prev') => {
-    try {
-      if (cmd === 'toggle') await (musicState.isPlaying ? spotify.spotifyPause() : spotify.spotifyPlay());
-      else if (cmd === 'next') await spotify.spotifyNext(); else await spotify.spotifyPrevious();
-      await new Promise((r) => setTimeout(r, 400));          // Spotify state lags the command slightly
-      await refreshExternalPlayback('spotify', true);
-    } catch (e) {
-      showToast(explainExternalError(e).message, 'warning');
-      await refreshExternalPlayback('spotify', true);
-    }
-  };
-
-  const toggleMusicPlayback = () => {
-    if (musicState.provider !== 'ambient') { void externalCommand('toggle'); return; }
-    setMusicState((prev) => {
-      const nextPlaying = !prev.isPlaying;
-      if (nextPlaying) musicRegistry.play(prev.ambientPreset || 'forest');
-      else musicRegistry.pause();
-      return { ...prev, isPlaying: nextPlaying };
-    });
-  };
-
-  const switchMusicProvider = (provider: 'ambient' | 'spotify') => {
-    musicRegistry.setActiveProvider(provider);
-    if (provider === 'ambient') {
-      const playback = musicRegistry.getCurrentPlaybackState(musicState.ambientPreset || 'forest');
-      setMusicState((prev) => ({ ...prev, provider, isPlaying: false, currentTrack: playback.currentTrack, artist: playback.artist,
-        durationSeconds: 0, progressSeconds: 0, externalStatus: undefined, externalMessage: undefined }));
-      return;
-    }
-    setMusicState((prev) => ({ ...prev, provider, isPlaying: false, currentTrack: 'Checking…', artist: '', durationSeconds: 0, progressSeconds: 0, externalStatus: 'unknown', externalMessage: undefined }));
-    void refreshExternalPlayback(provider, true);
-  };
-
-  const nextMusicTrack = () => { if (musicState.provider !== 'ambient') void externalCommand('next'); else showToast('Ambient sounds have no tracks to skip.', 'info'); };
-  const prevMusicTrack = () => { if (musicState.provider !== 'ambient') void externalCommand('prev'); else showToast('Ambient sounds have no tracks to skip.', 'info'); };
-
-  // Spotify position/track drift: refresh while the player is open.
-  useEffect(() => {
-    if (musicState.provider !== 'spotify' || !musicState.isOpen) return;
-    void refreshExternalPlayback('spotify', true);
-    const t = setInterval(() => void refreshExternalPlayback('spotify', true), 8000);
-    return () => clearInterval(t);
-  }, [musicState.provider, musicState.isOpen]);
-
-  const setMusicVolume = (vol: number) => {
-    setMusicState((prev) => ({ ...prev, volume: vol }));
-    ambientAudio.setVolume(vol);
-  };
-
-  const setMusicPreset = (preset: 'forest' | 'rain' | 'alpha' | 'celestial') => {
-    setMusicState((prev) => {
-      if (prev.isPlaying && prev.provider === 'ambient') {
-        ambientAudio.play(preset);
+      if (syncedRows.current) {
+        const existingIds = new Set(syncedRows.current.workouts.map((w) => w.id));
+        const toAdd = imported.filter((w) => !existingIds.has(w.id));
+        const updated = syncedRows.current.workouts.map((w) => {
+          const match = imported.find((m) => m.id === w.id);
+          return match ? { ...match, ...w } : w;
+        });
+        syncedRows.current = {
+          ...syncedRows.current,
+          workouts: [
+            ...updated,
+            ...toAdd.map((w) => ({
+              id: w.id,
+              title: w.title,
+              workout_date: w.date,
+              duration_minutes: w.durationMinutes,
+              calories: w.calories,
+              exercises: w.exercises ?? [],
+              notes: w.notes ?? null,
+              source: w.source ?? null,
+              external_id: w.externalId ?? null,
+            })),
+          ],
+        };
       }
-      const playback = musicRegistry.getCurrentPlaybackState(preset);
-      return {
-        ...prev,
-        ambientPreset: preset,
-        currentTrack: playback.currentTrack,
-      };
-    });
-  };
+    } catch {
+      // ignore
+    }
+  }, [user?.id]);
 
-  const openExternalMusicApp = () => {
-    musicRegistry.openExternalApp();
-  };
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshImportedWorkouts();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [refreshImportedWorkouts]);
 
   // Keyboard shortcut for Search (⌘K / Ctrl+K)
   useEffect(() => {
@@ -1138,6 +1135,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedNoteId,
         setSelectedNoteId,
         addNote,
+        addDateNote,
         updateNote,
         deleteNote,
         toggleStarNote,
@@ -1165,8 +1163,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCustomTracker,
         deleteCustomTracker,
         importCalendarEvents,
-        musicWidgetRequest,
-        openMusicWidget,
+        refreshImportedWorkouts,
+        musicHub,
+        toggleMusicHub,
+        openMusicHub,
+        closeMusicHub,
+        setMusicMinimized,
         focusRecord,
         setFocusRecord,
         loadState,
@@ -1188,16 +1190,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setQuickCaptureOpen,
         quickCaptureTab,
         openQuickCapture,
-        musicState,
-        setMusicState,
-        toggleMusicPlayer,
-        toggleMusicPlayback,
-        setMusicVolume,
-        setMusicPreset,
-        switchMusicProvider,
-        nextMusicTrack,
-        prevMusicTrack,
-        openExternalMusicApp,
         focusDurationMins,
         setFocusDurationMins,
         focusTaskTitle,

@@ -14,12 +14,11 @@ export function tokenRequestInit(provider: Provider, params: Record<string, stri
   const id = ctx.env[cfg.clientIdEnv]!, secret = ctx.env[cfg.clientSecretEnv]!;
   const headers: Record<string, string> = { 'Content-Type': 'application/x-www-form-urlencoded' };
   const body = new URLSearchParams(params);
-  if (provider === 'spotify') headers.Authorization = `Basic ${btoa(`${id}:${secret}`)}`;
-  else { body.set('client_id', id); body.set('client_secret', secret); }
+  body.set('client_id', id); body.set('client_secret', secret);
   return { method: 'POST', headers, body };
 }
 
-/** Exchange the stored refresh token for a short-lived access token. Never returned for Google; only Spotify's is handed to the browser. */
+/** Exchange the stored refresh token for a short-lived access token. Never returned to the browser. */
 export async function getAccessToken(userId: string, provider: Provider, ctx: Ctx): Promise<{ accessToken: string; expiresIn: number }> {
   const cfg = PROVIDERS[provider];
   requireEnv(ctx, [cfg.clientIdEnv, cfg.clientSecretEnv, 'TOKEN_ENCRYPTION_KEY']);

@@ -6,9 +6,10 @@ import { extractBody, normalizeGoogleEvent, validateHealthPayload } from '../sup
 import { gmailAction, buildRawMessage, parseRecipients } from '../supabase/functions/api/_shared/gmailApi.ts';
 import { driveAction, FOLDER_NAME } from '../supabase/functions/api/_shared/driveApi.ts';
 import { HttpError, type Ctx, type DbPort, type ConnPatch } from '../supabase/functions/api/_shared/ports.ts';
+import { getAccessToken } from '../supabase/functions/api/_shared/tokens.ts';
 
 const KEY = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64');
-const ENV = { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec', SPOTIFY_CLIENT_ID: 'sid', SPOTIFY_CLIENT_SECRET: 'ssec',
+const ENV = { GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsec',
   TOKEN_ENCRYPTION_KEY: KEY, SUPABASE_URL: 'https://x.supabase.co', APP_URL: 'https://app.example' };
 
 function memDb() {
@@ -125,18 +126,11 @@ test('refresh: invalid_grant marks needs_reauthorization; users cannot borrow ea
   await fails(gmailAction('B', { action: 'list' }, ctx), 409, 'not_connected');   // B has no connection of their own
 });
 test('refresh: a rotated refresh token is re-encrypted and saved', async () => {
-  const { ctx, mem } = mkCtx((u) => (u.includes('accounts.spotify.com/api/token') ? { body: { access_token: 'SAT', expires_in: 3600, refresh_token: 'RT-new' } } : undefined));
-  await connect(mem, 'A', 'spotify');
-  const r = await H.spotifyToken('A', ctx);
-  assert.deepEqual(r, { access_token: 'SAT', expires_in: 3600 });
+  const { ctx, mem } = mkCtx((u) => (u.includes('oauth2.googleapis.com/token') ? { body: { access_token: 'GAT', expires_in: 3600, refresh_token: 'RT-new' } } : undefined));
+  await connect(mem, 'A', 'google_calendar');
+  const r = await getAccessToken('A', 'google_calendar', ctx);
+  assert.deepEqual(r, { accessToken: 'GAT', expiresIn: 3600 });
   assert.deepEqual(await decryptJson([...mem.secrets.values()][0], KEY), { refresh_token: 'RT-new' });
-});
-test('spotify: uses Basic auth with the server secret; secret never returned to the browser', async () => {
-  const { ctx, mem, calls } = mkCtx((u) => (u.includes('accounts.spotify.com/api/token') ? { body: { access_token: 'SAT' } } : undefined));
-  await connect(mem, 'A', 'spotify');
-  const r = JSON.stringify(await H.spotifyToken('A', ctx));
-  assert.ok((calls[0].init!.headers as any).Authorization.startsWith('Basic '));
-  assert.ok(!r.includes('ssec') && !r.includes('RT-secret'));
 });
 
 // ---------- gmail ----------
@@ -259,7 +253,7 @@ const verifier = (valid: Record<string, string>) => async (t: string) => valid[t
 const req = (route: string, init: RequestInit = {}) => new Request(`${BASE}/${route}`, { method: 'POST', ...init });
 
 test('router: every user route rejects a missing, malformed, or invalid token BEFORE running any handler', async () => {
-  for (const route of ['oauth-start', 'oauth-disconnect', 'gmail', 'calendar-import', 'sheets-preview', 'spotify-token']) {
+  for (const route of ['oauth-start', 'oauth-disconnect', 'gmail', 'calendar-import', 'sheets-preview']) {
     const { ctx, calls } = mkCtx(() => undefined);
     for (const headers of [{}, { authorization: 'Bearer ' }, { authorization: 'Bearer nope' }, { authorization: 'Basic abc' }] as Record<string, string>[]) {
       const r = await handleRequest(req(route, { headers, body: '{}' }), ctx, verifier({ good: 'u1' }));
@@ -412,7 +406,7 @@ test('oauth start: Gmail asks for read-only by default; modify/send only when re
   assert.deepEqual((await scopes({ provider: 'gmail', capabilities: ['send', 'modify', 'send'] })).s, [GS.read, 'email', GS.send, GS.modify]);
   assert.deepEqual((await scopes({ provider: 'gmail', capabilities: ['delete-everything'] })).s, [GS.read, 'email']);
   const { ctx } = mkCtx(() => undefined);
-  await fails(H.startOAuth('u1', { provider: 'spotify', capabilities: ['modify'] }, ctx), 400, 'bad_capabilities');
+  await fails(H.startOAuth('u1', { provider: 'google_calendar', capabilities: ['modify'] }, ctx), 400, 'bad_capabilities');
 });
 
 

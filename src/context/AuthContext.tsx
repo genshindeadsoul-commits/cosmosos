@@ -7,7 +7,6 @@ interface AuthContextType {
   loading: boolean;
   session: Session | null;
   user: User | null;
-  isAdmin: boolean;
   authError: string | null;
   signInWithGoogle: () => Promise<void>;
   signingIn: boolean;
@@ -35,7 +34,6 @@ function readCallbackError(): string | null {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [session, setSession] = useState<Session | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [authError, setAuthError] = useState<string | null>(() => readCallbackError());
   // Did we land here carrying a sign-in code? (Read once at mount, before the client finishes exchanging it.)
   const [cameBackWithCode] = useState(() => /[?&]code=/.test(window.location.search));
@@ -68,21 +66,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       if (!active) return;
       setSession(next);
-      if (event === 'SIGNED_OUT') setIsAdmin(false);
       setLoading(false);
     });
     return () => { active = false; sub.subscription.unsubscribe(); };
   }, []);
-
-  // Admin status comes from the database (app_admins row), never from client state.
-  const userId = session?.user.id ?? null;
-  useEffect(() => {
-    if (!supabase || !userId) { setIsAdmin(false); return; }
-    let active = true;
-    supabase.from('app_admins').select('user_id').eq('user_id', userId).maybeSingle()
-      .then(({ data }) => { if (active) setIsAdmin(Boolean(data)); });
-    return () => { active = false; };
-  }, [userId]);
 
   const signingInRef = useRef(false);
   const [signingIn, setSigningIn] = useState(false);
@@ -117,12 +104,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.auth.signOut();
     if (error) setAuthError(error.message);
     setSession(null);
-    setIsAdmin(false);
   }, []);
 
   return (
     <AuthContext.Provider value={{
-      configured: isSupabaseConfigured, loading, session, user: session?.user ?? null, isAdmin, authError,
+      configured: isSupabaseConfigured, loading, session, user: session?.user ?? null, authError,
       signInWithGoogle, signingIn, signOut, clearAuthError: () => setAuthError(null),
     }}>
       {children}

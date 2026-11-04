@@ -6,6 +6,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { usePrefs } from '../../context/PrefsContext';
 import { ModuleType } from '../../types';
 
 const MODULE_TITLES: Record<ModuleType, string> = {
@@ -19,7 +20,6 @@ const MODULE_TITLES: Record<ModuleType, string> = {
   tasks: 'Tasks & Calendar',
   settings: 'Settings',
   mail: 'Mail',
-  admin: 'Admin',
 };
 
 export const TopBar: React.FC = () => {
@@ -33,11 +33,25 @@ export const TopBar: React.FC = () => {
     saveStatus,
     saveError,
     retrySave,
-    toggleMusicPlayer,
-    musicState,
+    toggleMusicHub,
+    openMusicHub,
+    closeMusicHub,
+    musicHub,
     userProfile,
     setProfileOpen,
   } = useApp();
+  const { prefs, update } = usePrefs();
+
+  const isPlayerOpen = Boolean(prefs.appleMusic?.visible) || musicHub.open;
+  const handleTogglePlayer = () => {
+    if (isPlayerOpen) {
+      closeMusicHub();
+      update({ appleMusic: { visible: false } });
+    } else {
+      openMusicHub();
+      update({ appleMusic: { visible: true } });
+    }
+  };
 
   return (
     <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between border-b border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/90 dark:bg-[#181A17]/90 px-3 sm:px-6 backdrop-blur-md">
@@ -79,16 +93,17 @@ export const TopBar: React.FC = () => {
 
         {/* Floating Mini-Player Launcher */}
         <button
-          onClick={toggleMusicPlayer}
-          title="Toggle Focus Sound & Music Player"
+          onClick={handleTogglePlayer}
+          title="Music player"
           aria-label="Toggle Focus Sound & Music Player"
+          aria-pressed={isPlayerOpen && !musicHub.minimized}
           className={`flex items-center justify-center rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
-            musicState.isOpen || musicState.isPlaying
+            isPlayerOpen
               ? 'bg-[#D4F6E3] dark:bg-[#1E3F29] text-[#1E5E3A] dark:text-[#8AE7B0] ring-1 ring-[#73C999]'
               : 'bg-[#E8EEE6] dark:bg-[#292D27] text-[#526B55] dark:text-[#A8BDA1] hover:bg-[#DFE1D9] dark:hover:bg-[#30352D]'
           }`}
         >
-          <Music2 className={`h-4 w-4 ${musicState.isPlaying ? 'animate-pulse' : ''}`} />
+          <Music2 className="h-4 w-4" />
         </button>
 
         {/* Add Task Quick Action */}

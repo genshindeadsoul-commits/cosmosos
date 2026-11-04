@@ -36,8 +36,8 @@ export const FitnessView: React.FC = () => {
     addWorkout({
       title: title.trim(),
       date,
-      durationMinutes: parseInt(duration) || 45,
-      calories: parseInt(calories) || 300,
+      durationMinutes: duration.trim() ? parseInt(duration, 10) : null,
+      calories: calories.trim() ? parseInt(calories, 10) : null,
       exercises: exerciseList.filter((ex) => ex.name.trim()),
     });
 
@@ -89,12 +89,14 @@ export const FitnessView: React.FC = () => {
             <div className="flex items-center">
               <button
                 aria-label="Previous month"
+                onClick={() => setView((v) => (v.m === 0 ? { y: v.y - 1, m: 11 } : { y: v.y, m: v.m - 1 }))}
                 className="rounded p-1 text-[#8A8E85] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <button
                 aria-label="Next month"
+                onClick={() => setView((v) => (v.m === 11 ? { y: v.y + 1, m: 0 } : { y: v.y, m: v.m + 1 }))}
                 className="rounded p-1 text-[#8A8E85] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -189,13 +191,21 @@ export const FitnessView: React.FC = () => {
                     <span>·</span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {w.durationMinutes} mins
+                      {w.durationMinutes == null ? '—' : `${w.durationMinutes} mins`}
                     </span>
                     <span>·</span>
                     <span className="flex items-center gap-1">
                       <Flame className="h-3 w-3 text-orange-500" />
-                      {w.calories} kcal
+                      {w.calories == null ? '—' : `${w.calories} kcal`}
                     </span>
+                    {(w.source === 'health_connect' || Boolean(w.externalId)) && (
+                      <>
+                        <span>·</span>
+                        <span className="inline-flex items-center gap-1 rounded bg-[#3D5240]/10 text-[#3D5240] dark:bg-[#A8BDA1]/20 dark:text-[#A8BDA1] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                          Imported
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -208,18 +218,20 @@ export const FitnessView: React.FC = () => {
                 </button>
               </div>
 
-              {/* Exercise Badges / Chips matching Screenshot 2 */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                {w.exercises.map((ex, idx) => (
-                  <span
-                    key={idx}
-                    className="rounded-md border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] px-2.5 py-1 text-xs font-mono font-semibold text-[#252821] dark:text-[#ECEDE6]"
-                  >
-                    {ex.name}: {ex.setsReps}
-                    {ex.weightLbs !== undefined ? ` @ ${ex.weightLbs}lbs` : ''}
-                  </span>
-                ))}
-              </div>
+              {/* Exercise Badges / Chips */}
+              {(w.exercises ?? []).length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {w.exercises.map((ex, idx) => (
+                    <span
+                      key={idx}
+                      className="rounded-md border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] px-2.5 py-1 text-xs font-mono font-semibold text-[#252821] dark:text-[#ECEDE6]"
+                    >
+                      {ex.name}: {ex.setsReps}
+                      {ex.weightLbs !== undefined ? ` @ ${ex.weightLbs}lbs` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {w.notes && (
                 <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F] italic pt-1">

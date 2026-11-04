@@ -116,7 +116,11 @@ export function parseBackup(json: string): ParseResult {
     if (!map.has(key)) { map.set(key, newId()); remapped++; }
     return map.get(key)!;
   };
-  data.notes.forEach((n) => { n.id = fix(n.id); n.tags = Array.isArray(n.tags) ? n.tags : []; });
+  data.notes.forEach((n) => {
+    n.id = fix(n.id);
+    n.tags = Array.isArray(n.tags) ? n.tags : [];
+    if (n.noteDate && !real(n.noteDate)) n.noteDate = undefined;
+  });
   data.tasks.forEach((t) => { t.id = fix(t.id); if (t.linkedNoteId) t.linkedNoteId = fix(t.linkedNoteId); });
   data.events.forEach((e) => { e.id = fix(e.id); e.source = e.source === 'google_calendar' ? 'google_calendar' : 'local'; });
   data.transactions.forEach((t) => { t.id = fix(t.id); });

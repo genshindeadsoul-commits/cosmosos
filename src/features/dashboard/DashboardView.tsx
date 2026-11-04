@@ -32,6 +32,8 @@ export const DashboardView: React.FC = () => {
     habits,
     toggleTaskStatus,
     addTask,
+    addDateNote,
+    setFocusRecord,
     setActiveModule,
     setSelectedNoteId,
     toggleHabitCheckin,
@@ -50,6 +52,9 @@ export const DashboardView: React.FC = () => {
   const [view, setView] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<number>(new Date().getDate());
 
+  const selectedDayKey = dayKey(view.y, view.m, selectedCalendarDay);
+  const dayNotes = notes.filter((n) => n.noteDate === selectedDayKey);
+
   // Remaining tasks for today (active only)
   const pendingTasks = tasks.filter((t) => t.status !== 'completed');
   const todayActiveTasks = pendingTasks;
@@ -59,7 +64,11 @@ export const DashboardView: React.FC = () => {
     .filter((t) => t.type === 'expense')
     .reduce((acc, curr) => acc + curr.amount, 0);
 
-  const busyDays = new Set<string>([...tasks.filter((t) => t.status !== 'completed' && t.dueDate).map((t) => t.dueDate), ...events.map((e) => e.date)]);
+  const busyDays = new Set<string>([
+    ...tasks.filter((t) => t.status !== 'completed' && t.dueDate).map((t) => t.dueDate),
+    ...events.map((e) => e.date),
+    ...notes.filter((n) => n.noteDate).map((n) => n.noteDate!),
+  ]);
 
   const handleQuickAdd = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -334,6 +343,53 @@ export const DashboardView: React.FC = () => {
                   </button>
                 );
               })}
+            </div>
+
+            {/* Selected day notes region */}
+            <div className="mt-3 border-t border-[#DFE1D9] dark:border-[#383D35] pt-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#252821] dark:text-[#ECEDE6]">
+                  Notes for {selectedDayKey}
+                </span>
+                <button
+                  onClick={() => {
+                    const n = addDateNote(selectedDayKey);
+                    setFocusRecord({ kind: 'note', id: n.id });
+                    setActiveModule('notes');
+                  }}
+                  className="inline-flex items-center gap-1 rounded bg-[#3D5240] dark:bg-[#526B55] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#2E3F31]"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>{dayNotes.length === 0 ? 'Add note for this date' : 'Add another note'}</span>
+                </button>
+              </div>
+
+              {dayNotes.length === 0 ? (
+                <p className="text-[11px] text-[#8A8E85]">No notes for this date.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {dayNotes.map((n) => (
+                    <div
+                      key={n.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/60 dark:bg-[#181A17]/60 p-2 text-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-semibold text-[#252821] dark:text-[#ECEDE6]">{n.title || 'Untitled'}</p>
+                        <p className="truncate text-[10px] text-[#6B7067] dark:text-[#A6AB9F]">{n.excerpt || 'No content'}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setFocusRecord({ kind: 'note', id: n.id });
+                          setActiveModule('notes');
+                        }}
+                        className="rounded border border-[#DFE1D9] dark:border-[#383D35] px-2 py-0.5 text-[11px] font-semibold hover:bg-white dark:hover:bg-[#20231F]"
+                      >
+                        Open
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
