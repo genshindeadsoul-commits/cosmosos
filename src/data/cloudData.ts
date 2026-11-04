@@ -62,7 +62,7 @@ export function toRows(d: CosmosAppData): RowSet {
       end_time: e.endTime ?? '', category: e.category, location: nz(e.location), source: e.source, provider_id: nz(e.providerId),
     })),
     transactions: d.transactions.map((t) => ({
-      id: t.id, type: t.type, category: t.category, description: t.description ?? '', amount: Math.abs(t.amount),
+      id: t.id, type: t.type, category: t.category, title: nz(t.title), description: t.description ?? '', amount: Math.abs(t.amount),
       tx_date: t.date, tx_time: nz(t.time), notes: nz(t.notes),
     })),
     subscriptions: d.subscriptions.map((s) => ({
@@ -144,6 +144,7 @@ export function fromRows(r: RowSet, today = new Date()): CosmosAppData {
     })),
     transactions: r.transactions.map((t) => ({
       id: s(t.id), type: s(t.type) as Transaction['type'], category: s(t.category) as Transaction['category'],
+      title: (t.title as string) || undefined,
       description: s(t.description), amount: num(t.amount), date: date10(t.tx_date),
       time: (t.tx_time as string) ?? undefined, notes: (t.notes as string) ?? undefined,
     })),
@@ -258,6 +259,7 @@ const MODULE_OF: Record<TableName, string> = {
 const reasonFor = (f: SaveFailure): string => {
   const m = f.message;
   if (/column ["']?note_date["']? does not exist/i.test(m) || (f.table === 'notes' && /column.*does not exist/i.test(m))) return 'needs migration 0005';
+  if (/column ["']?title["']? does not exist/i.test(m) || (f.table === 'transactions' && /column.*does not exist/i.test(m))) return 'needs migration 0006';
   if (/invalid input syntax for type uuid/i.test(m)) return 'an item had an invalid ID';
   if (f.code === '42501' || /row-level security|permission denied/i.test(m)) return 'your account isn’t allowed to save this';
   if (f.code === '23503' || /foreign key/i.test(m)) return 'it points at a record that no longer exists';

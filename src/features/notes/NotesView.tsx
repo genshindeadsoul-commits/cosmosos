@@ -271,20 +271,20 @@ export const NotesView: React.FC = () => {
           {selectedNote ? (
             <>
               {/* Editor Toolbar */}
-              <div className="flex flex-wrap items-center justify-between border-b border-[#DFE1D9] dark:border-[#383D35] px-4 py-2 gap-2">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center justify-between border-b border-[#DFE1D9] dark:border-[#383D35] px-3 sm:px-4 py-2 gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 overflow-x-auto no-scrollbar">
                   {/* Mobile Back Button */}
                   <button
                     onClick={() => setIsMobileEditorOpen(false)}
                     aria-label="Back to notes list"
-                    className="flex items-center gap-1 text-xs font-semibold text-[#526B55] dark:text-[#A8BDA1] md:hidden pr-2 border-r border-[#DFE1D9] dark:border-[#383D35]"
+                    className="flex items-center gap-1 text-xs font-semibold text-[#526B55] dark:text-[#A8BDA1] md:hidden pr-2 border-r border-[#DFE1D9] dark:border-[#383D35] shrink-0"
                   >
                     <ArrowLeft className="h-4 w-4" />
                     <span>Notes</span>
                   </button>
 
                   {/* Formatting Buttons */}
-                  <div className="flex items-center gap-0.5">
+                  <div className="flex items-center gap-0.5 shrink-0">
                     <button
                       onClick={() => insertFormatting('**', '**')}
                       title="Bold"
@@ -337,7 +337,7 @@ export const NotesView: React.FC = () => {
                 </div>
 
                 {/* Right controls: Save badge & Delete */}
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                   <span className="flex items-center gap-1 text-[11px] text-[#477653] dark:text-[#91B594] font-medium">
                     <Check className="h-3 w-3" />
                     <span role="status">{syncStatus === 'saving' ? 'Saving…' : syncStatus === 'error' ? 'Not saved' : 'Saved'}</span>
@@ -431,19 +431,21 @@ export const NotesView: React.FC = () => {
               </div>
 
               {/* Title Input, Note Date & Tags */}
-              <div className="p-4 sm:p-6 pb-2 space-y-2 max-w-3xl">
+              <div className="p-3 sm:p-6 pb-2 space-y-2 max-w-3xl w-full">
                 <input
                   type="text"
                   value={selectedNote.title}
                   onChange={(e) => handleTitleChange(e.target.value)}
                   placeholder="Note Title"
-                  className="w-full text-xl sm:text-2xl font-extrabold tracking-tight text-[#252821] dark:text-[#ECEDE6] bg-transparent focus:outline-none"
+                  className="w-full text-lg sm:text-2xl font-extrabold tracking-tight text-[#252821] dark:text-[#ECEDE6] bg-transparent focus:outline-none"
                 />
 
                 {/* Date Association for Calendar */}
-                <div className="flex items-center gap-2 text-xs text-[#6B7067] dark:text-[#A6AB9F]">
-                  <Calendar className="h-3.5 w-3.5 shrink-0" />
-                  <span className="text-[11px] font-semibold">Note date:</span>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-[#6B7067] dark:text-[#A6AB9F]">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 shrink-0" />
+                    <span className="text-[11px] font-semibold">Note date:</span>
+                  </div>
                   <input
                     type="date"
                     aria-label="Note date"
@@ -534,13 +536,13 @@ export const NotesView: React.FC = () => {
               </div>
 
               {/* Note Content Editor Area */}
-              <div className="flex-1 p-4 sm:p-6 pt-2 overflow-y-auto max-w-3xl w-full">
+              <div className="flex-1 p-3 sm:p-6 pt-2 overflow-y-auto max-w-3xl w-full">
                 <textarea
                   id="note-editor-textarea"
                   value={selectedNote.content}
                   onChange={(e) => handleContentChange(e.target.value)}
                   placeholder="Type note content or Markdown..."
-                  className="w-full h-full min-h-[300px] resize-none bg-transparent text-sm leading-relaxed text-[#252821] dark:text-[#ECEDE6] focus:outline-none font-sans"
+                  className="w-full h-full min-h-[180px] resize-none bg-transparent text-sm leading-relaxed text-[#252821] dark:text-[#ECEDE6] focus:outline-none font-sans"
                 />
               </div>
             </>

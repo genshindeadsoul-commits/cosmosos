@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  Check,
   AlertCircle,
   RefreshCw,
   ShieldCheck,
@@ -24,6 +25,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { usePrefs, DEFAULT_DASHBOARD_GRID, DashboardGridMode } from '../../context/PrefsContext';
 import { useIntegrations } from '../../context/IntegrationsContext';
 import { SheetsImportPanel, HealthTokenPanel } from './IntegrationPanels';
 import { MusicSettingsPanel } from './MusicSettingsPanel';
@@ -41,6 +43,7 @@ export const SettingsView: React.FC = () => {
     setActiveModule,
     showToast,
   } = useApp();
+  const { prefs, setDashboardGrid } = usePrefs();
   const { integrations, connect, disconnect, sync, busy } = useIntegrations();
 
   const [expandedId, setExpandedId] = useState<string | null>('gcal');
@@ -162,6 +165,69 @@ export const SettingsView: React.FC = () => {
             <Monitor className="h-4 w-4" />
             <span>System Default</span>
           </button>
+        </div>
+      </div>
+
+      {/* Dashboard Layout / Grid Preferences Card (Part 9) */}
+      <div className="rounded-2xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-5 sm:p-6 shadow-xs space-y-4">
+        <div>
+          <h2 className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
+            Dashboard Layout / Grid Preferences
+          </h2>
+          <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F]">
+            Configure how widgets and cards adapt across screen widths
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
+          {[
+            { id: '1-col', label: 'One column', desc: 'Spacious single column layout' },
+            { id: '2-col', label: 'Two columns', desc: 'Balanced side-by-side cards' },
+            { id: '3-col', label: 'Three columns', desc: 'Compact dense card view' },
+            { id: 'auto', label: 'Auto / Adaptive', desc: 'Optimal layout based on screen width' },
+          ].map((opt) => {
+            const isSelected = (prefs.dashboardGrid?.mode ?? DEFAULT_DASHBOARD_GRID.mode) === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setDashboardGrid({ mode: opt.id as DashboardGridMode })}
+                className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all ${
+                  isSelected
+                    ? 'border-[#3D5240] dark:border-[#526B55] bg-[#E8EEE6] dark:bg-[#303B2E]/60 ring-1 ring-[#3D5240] dark:ring-[#526B55]'
+                    : 'border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/60 dark:bg-[#181A17]/60 hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="text-xs font-bold text-[#252821] dark:text-[#ECEDE6]">
+                    {opt.label}
+                  </span>
+                  {isSelected && <Check className="h-3.5 w-3.5 text-[#3D5240] dark:text-[#A8BDA1]" />}
+                </div>
+                <span className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F] mt-0.5">
+                  {opt.desc}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Option: Automatically adapt to screen width */}
+        <div className="pt-2 border-t border-[#DFE1D9] dark:border-[#383D35] flex items-center justify-between">
+          <div>
+            <label htmlFor="auto-adapt-toggle" className="text-xs font-semibold text-[#252821] dark:text-[#ECEDE6] cursor-pointer">
+              Automatically adapt to screen width
+            </label>
+            <p className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F]">
+              Reduces columns dynamically on smaller mobile screens to prevent horizontal overflow and text clipping.
+            </p>
+          </div>
+          <input
+            id="auto-adapt-toggle"
+            type="checkbox"
+            checked={prefs.dashboardGrid?.autoAdapt ?? DEFAULT_DASHBOARD_GRID.autoAdapt}
+            onChange={(e) => setDashboardGrid({ autoAdapt: e.target.checked })}
+            className="h-4 w-4 rounded accent-[#3D5240] dark:accent-[#526B55] cursor-pointer"
+          />
         </div>
       </div>
 

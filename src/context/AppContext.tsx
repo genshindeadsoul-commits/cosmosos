@@ -95,6 +95,7 @@ interface AppContextType {
   
   // Transactions & Subscriptions
   addTransaction: (tx: Omit<Transaction, 'id'>) => void;
+  updateTransaction: (tx: Transaction) => void;
   deleteTransaction: (id: string) => void;
   addSubscription: (sub: Omit<Subscription, 'id'>) => void;
   deleteSubscription: (id: string) => void;
@@ -865,6 +866,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`${tx.type === 'income' ? 'Income' : 'Expense'} recorded: ₹${tx.amount.toLocaleString()}`, 'success');
   };
 
+  const updateTransaction = (tx: Transaction) => {
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            transactions: prev.transactions.map((t) => (t.id === tx.id ? tx : t)),
+          }
+        : null
+    );
+    showToast('Transaction updated', 'success');
+  };
+
   const deleteTransaction = (id: string) => {
     setData((prev) =>
       prev
@@ -1147,6 +1160,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteTableRow,
         addTableCollection,
         addTransaction,
+        updateTransaction,
         deleteTransaction,
         addSubscription,
         deleteSubscription,

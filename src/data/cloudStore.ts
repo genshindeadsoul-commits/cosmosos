@@ -36,7 +36,28 @@ export async function applyChanges(plan: ChangePlan): Promise<SaveFailure[]> {
     const rows = plan.upserts[t];
     if (!rows?.length || failed.has(t)) continue;
     try {
-      const { error } = await sb.from(t).upsert(rows as never, { onConflict: PK[t].join(',') });
+      let { error } = await sb.from(t).upsert(rows as never, { onConflict: PK[t].join(',') });
+      // Schema cache fallback for migration 0005: preserve note content if note_date column is not yet in DB
+      if (error && t === 'notes' && (/note_date.*schema cache/i.test(error.message) || /column notes\.note_date does not exist/i.test(error.message))) {
+        const stripped = rows.map((r) => { const { note_date, ...rest } = r as any; return rest; });
+        const retry = await sb.from(t).upsert(stripped as never, { onConflict: PK[t].join(',') });
+        if (!retry.error) {
+          console.warn('Saved notes without note_date column (database needs migration 0005_note_dates.sql)');
+          error = null;
+        }
+      }
+      // Schema cache fallback for migration 0006: preserve transaction if title column is not yet in DB
+      if (error && t === 'transactions' && (/title.*schema cache/i.test(error.message) || /column transactions\.title does not exist/i.test(error.message))) {
+        const stripped = rows.map((r) => {
+          const { title, description, ...rest } = r as any;
+          return { ...rest, description: title ? (description ? `${title}: ${description}` : title) : description };
+        });
+        const retry = await sb.from(t).upsert(stripped as never, { onConflict: PK[t].join(',') });
+        if (!retry.error) {
+          console.warn('Saved transactions without title column (database needs migration 0006_transaction_title.sql)');
+          error = null;
+        }
+      }
       if (error) fail(t, error);
     } catch (e) { fail(t, { message: (e as Error).message }); }          // network exceptions
   }

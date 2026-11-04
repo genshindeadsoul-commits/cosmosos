@@ -3,10 +3,33 @@ import { requireSupabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import type { PlaylistItem } from '../lib/playlists';
 
-export interface AppleMusicPrefs { url: string | null; x: number; y: number; w: number; h: number; mode: 'compact' | 'expanded' | 'minimized'; visible: boolean }
-export interface Prefs { appleMusic?: Partial<AppleMusicPrefs>; mailFolder?: string; playlists?: PlaylistItem[]; activePlaylistId?: string }
+export type DashboardGridMode = '1-col' | '2-col' | '3-col' | 'auto';
+export interface DashboardGridPrefs {
+  mode: DashboardGridMode;
+  autoAdapt: boolean;
+}
+export const DEFAULT_DASHBOARD_GRID: DashboardGridPrefs = {
+  mode: 'auto',
+  autoAdapt: true,
+};
 
-interface PrefsContextType { prefs: Prefs; loaded: boolean; update: (patch: Prefs) => void }
+export interface AppleMusicPrefs { url: string | null; x: number; y: number; w: number; h: number; mode: 'compact' | 'expanded' | 'minimized'; visible: boolean }
+export interface Prefs {
+  appleMusic?: Partial<AppleMusicPrefs>;
+  mailFolder?: string;
+  playlists?: PlaylistItem[];
+  activePlaylistId?: string;
+  monthlyBudgets?: Record<string, number>;
+  dashboardGrid?: DashboardGridPrefs;
+}
+
+interface PrefsContextType {
+  prefs: Prefs;
+  loaded: boolean;
+  update: (patch: Prefs) => void;
+  setMonthlyBudget: (monthKey: string, amount: number) => void;
+  setDashboardGrid: (grid: Partial<DashboardGridPrefs>) => void;
+}
 const Ctx = createContext<PrefsContextType | undefined>(undefined);
 
 /**
@@ -47,9 +70,27 @@ export const PrefsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     timer.current = setTimeout(() => void save(), 700);
   }, [save]);
 
+  const setMonthlyBudget = useCallback((monthKey: string, amount: number) => {
+    update({
+      monthlyBudgets: {
+        ...(latest.current.monthlyBudgets ?? {}),
+        [monthKey]: Math.max(0, amount),
+      },
+    });
+  }, [update]);
+
+  const setDashboardGrid = useCallback((grid: Partial<DashboardGridPrefs>) => {
+    update({
+      dashboardGrid: {
+        ...(latest.current.dashboardGrid ?? DEFAULT_DASHBOARD_GRID),
+        ...grid,
+      },
+    });
+  }, [update]);
+
   useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); void save(); } }, [save]);   // flush on unmount
 
-  return <Ctx.Provider value={{ prefs, loaded, update }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ prefs, loaded, update, setMonthlyBudget, setDashboardGrid }}>{children}</Ctx.Provider>;
 };
 
 export function usePrefs(): PrefsContextType {

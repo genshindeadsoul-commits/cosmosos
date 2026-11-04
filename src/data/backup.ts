@@ -13,6 +13,8 @@ export interface BackupSettings {
   theme?: 'light' | 'dark' | 'system';
   playlists?: PlaylistItem[]; activePlaylistId?: string; mailFolder?: string;
   appleMusic?: { x?: number; y?: number; w?: number; h?: number; mode?: 'compact' | 'expanded' | 'minimized'; visible?: boolean };
+  monthlyBudgets?: Record<string, number>;
+  dashboardGrid?: { mode?: '1-col' | '2-col' | '3-col' | 'auto'; autoAdapt?: boolean };
 }
 
 const SECRETISH = /token|secret|password|passwd|credential|api[_-]?key|authorization|cookie|refresh/i;
@@ -71,6 +73,23 @@ export function sanitizeSettings(raw: any): BackupSettings {
   if (am && typeof am === 'object') {
     const n = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : undefined);
     out.appleMusic = { x: n(am.x, 0, 10000), y: n(am.y, 0, 10000), w: n(am.w, 280, 640), h: n(am.h, 120, 640), mode: ['compact', 'expanded', 'minimized'].includes(am.mode) ? am.mode : undefined, visible: typeof am.visible === 'boolean' ? am.visible : undefined };
+  }
+  if (raw.monthlyBudgets && typeof raw.monthlyBudgets === 'object' && !Array.isArray(raw.monthlyBudgets)) {
+    const budgets: Record<string, number> = {};
+    for (const [k, v] of Object.entries(raw.monthlyBudgets)) {
+      if (/^\d{4}-\d{2}$/.test(k) && typeof v === 'number' && Number.isFinite(v) && v >= 0) {
+        budgets[k] = Math.round(v * 100) / 100;
+      }
+    }
+    if (Object.keys(budgets).length > 0) out.monthlyBudgets = budgets;
+  }
+  if (raw.dashboardGrid && typeof raw.dashboardGrid === 'object') {
+    const dg = raw.dashboardGrid;
+    const mode = ['1-col', '2-col', '3-col', 'auto'].includes(dg.mode) ? dg.mode : undefined;
+    const autoAdapt = typeof dg.autoAdapt === 'boolean' ? dg.autoAdapt : undefined;
+    if (mode !== undefined || autoAdapt !== undefined) {
+      out.dashboardGrid = { mode: mode as any, autoAdapt };
+    }
   }
   return out;
 }

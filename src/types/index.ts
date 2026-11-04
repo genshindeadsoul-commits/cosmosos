@@ -93,6 +93,7 @@ export interface Transaction {
   id: string;
   type: TransactionType;
   category: ExpenseCategory;
+  title?: string;
   description: string;
   amount: number;
   date: string;

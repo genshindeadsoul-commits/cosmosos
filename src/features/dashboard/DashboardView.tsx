@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Calendar as CalendarIcon,
   CheckCircle2,
@@ -19,6 +19,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { usePrefs, DEFAULT_DASHBOARD_GRID } from '../../context/PrefsContext';
 import { dayKey, daysInMonth, leadingBlanks, monthLabel, shiftMonth, todayKey } from '../../lib/dates';
 import { TaskListType } from '../../types';
 
@@ -46,6 +47,38 @@ export const DashboardView: React.FC = () => {
     toggleFocusTimer,
     resetFocusTimer,
   } = useApp();
+
+  const { prefs } = usePrefs();
+  const gridPrefs = prefs.dashboardGrid ?? DEFAULT_DASHBOARD_GRID;
+  const { mode, autoAdapt } = gridPrefs;
+
+  const mainGridCols = useMemo(() => {
+    if (mode === '1-col') return 'grid grid-cols-1 gap-5';
+    if (mode === '2-col') return autoAdapt ? 'grid grid-cols-1 md:grid-cols-2 gap-5' : 'grid grid-cols-2 gap-5';
+    if (mode === '3-col') return autoAdapt ? 'grid grid-cols-1 md:grid-cols-3 gap-5' : 'grid grid-cols-3 gap-5';
+    return 'grid grid-cols-1 lg:grid-cols-12 gap-5';
+  }, [mode, autoAdapt]);
+
+  const tasksColSpan = useMemo(() => {
+    if (mode === '1-col') return 'col-span-1 space-y-5';
+    if (mode === '2-col') return 'col-span-1 space-y-5';
+    if (mode === '3-col') return 'md:col-span-2 col-span-1 space-y-5';
+    return 'lg:col-span-7 space-y-5';
+  }, [mode]);
+
+  const sideColSpan = useMemo(() => {
+    if (mode === '1-col') return 'col-span-1 space-y-5';
+    if (mode === '2-col') return 'col-span-1 space-y-5';
+    if (mode === '3-col') return 'md:col-span-1 col-span-1 space-y-5';
+    return 'lg:col-span-5 space-y-5';
+  }, [mode]);
+
+  const bottomGridCols = useMemo(() => {
+    if (mode === '1-col') return 'grid grid-cols-1 gap-4';
+    if (mode === '2-col') return autoAdapt ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : 'grid grid-cols-2 gap-4';
+    if (mode === '3-col') return autoAdapt ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4' : 'grid grid-cols-3 gap-4';
+    return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4';
+  }, [mode, autoAdapt]);
 
   const [quickTitle, setQuickTitle] = useState('');
   const [selectedQuickList, setSelectedQuickList] = useState<TaskListType>('Work');
@@ -149,9 +182,9 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Main Grid: Left (Quick Capture & Today's tasks) + Right (Mini Calendar & Focus Timer) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left Column (7 cols on lg) */}
-        <div className="lg:col-span-7 space-y-5">
+      <div className={mainGridCols}>
+        {/* Left Column */}
+        <div className={tasksColSpan}>
           {/* Quick Add Task Input Card */}
           <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-4 shadow-xs space-y-3">
             <form onSubmit={handleQuickAdd} className="flex items-center gap-2">
@@ -273,8 +306,8 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Column (5 cols on lg) */}
-        <div className="lg:col-span-5 space-y-5">
+        {/* Right Column */}
+        <div className={sideColSpan}>
           {/* Mini Calendar View */}
           <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-4 shadow-xs">
             <div className="flex items-center justify-between pb-3">
@@ -485,7 +518,7 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Bottom 4 Widget Grid: Notes, Ledger, Fitness, Habits */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={bottomGridCols}>
         {/* Widget 1: Recent Notes */}
         <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-4 shadow-xs flex flex-col justify-between">
           <div>
