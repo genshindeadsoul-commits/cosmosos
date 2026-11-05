@@ -66,9 +66,17 @@ export function toRows(d: CosmosAppData): RowSet {
     transactions: d.transactions.map((t) => ({
       id: t.id, type: t.type, category: t.category, title: nz(t.title), description: t.description ?? '', amount: Math.abs(t.amount),
       tx_date: t.date, tx_time: nz(t.time), notes: nz(t.notes),
+      account: nz(t.account) || 'Bank account',
+      transfer_account: nz(t.transferAccount),
+      tags: t.tags ?? [],
     })),
     subscriptions: d.subscriptions.map((s) => ({
       id: s.id, name: s.name, amount: Math.abs(s.amount), billing_cycle: s.billingCycle, renewal_date: s.renewalDate,
+      description: nz(s.description),
+      category: nz(s.category) || 'Utilities',
+      account: nz(s.account) || 'Bank account',
+      status: s.status || 'active',
+      last_paid_date: nz(s.lastPaidDate),
     })),
     workouts: d.workouts.map((w) => ({
       id: w.id, title: w.title, workout_date: w.date, duration_minutes: w.durationMinutes, calories: w.calories,
@@ -153,10 +161,18 @@ export function fromRows(r: RowSet, today = new Date()): CosmosAppData {
       title: (t.title as string) || undefined,
       description: s(t.description), amount: num(t.amount), date: date10(t.tx_date),
       time: (t.tx_time as string) ?? undefined, notes: (t.notes as string) ?? undefined,
+      account: (t.account as string) || 'Bank account',
+      transferAccount: (t.transfer_account as string) || undefined,
+      tags: (t.tags as string[]) ?? [],
     })),
     subscriptions: r.subscriptions.map((x) => ({
       id: s(x.id), name: s(x.name), amount: num(x.amount), billingCycle: s(x.billing_cycle) as Subscription['billingCycle'],
       renewalDate: date10(x.renewal_date),
+      description: (x.description as string) ?? undefined,
+      category: (x.category as string) || 'Utilities',
+      account: (x.account as string) || 'Bank account',
+      status: (x.status as Subscription['status']) || 'active',
+      lastPaidDate: date10(x.last_paid_date) || undefined,
     })),
     workouts: r.workouts.map((w) => ({
       id: s(w.id), title: s(w.title), date: date10(w.workout_date),

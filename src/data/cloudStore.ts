@@ -58,6 +58,18 @@ export async function applyChanges(plan: ChangePlan): Promise<SaveFailure[]> {
           error = null;
         }
       }
+      // Schema cache fallback for migration 0008: preserve transaction if account columns not yet in DB
+      if (error && t === 'transactions' && (/(account|transfer_account|tags).*schema cache/i.test(error.message) || /column.*(account|transfer_account|tags).*does not exist/i.test(error.message))) {
+        const stripped = rows.map((r) => {
+          const { account, transfer_account, tags, ...rest } = r as any;
+          return rest;
+        });
+        const retry = await sb.from(t).upsert(stripped as never, { onConflict: PK[t].join(',') });
+        if (!retry.error) {
+          console.warn('Saved transactions without account columns (database needs migration 0008_finance_ledger_overhaul.sql)');
+          error = null;
+        }
+      }
       if (error) fail(t, error);
     } catch (e) { fail(t, { message: (e as Error).message }); }          // network exceptions
   }

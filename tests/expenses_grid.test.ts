@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import { toRows, fromRows, planChanges, CosmosAppData, EMPTY_DATA, newId } from '../src/data/cloudData.ts';
 import { sanitizeSettings } from '../src/data/backup.ts';
 import { shiftDayKey, formatReadableDate } from '../src/lib/dates.ts';
+import {
+  calculateAccountBalances,
+  calculateCashFlow,
+  calculateBudgetProgress,
+  roundCurrency,
+  getNextRecurringDate,
+  getNextSubscriptionDate,
+  exportTransactionsToCsv,
+  parseTransactionsFromCsv,
+} from '../src/lib/finance.ts';
+import type { Account, Transaction } from '../src/types/index.ts';
 
 test('custom transaction title: title is serialized and roundtripped through toRows and fromRows', () => {
   const txId = newId();
@@ -248,5 +259,120 @@ test('finance: monthly budget remains strictly isolated to the active month even
   assert.equal(budgetRemaining, 17000);
   assert.equal(budgetRemaining > 0, true);
 });
+
+test('finance math: roundCurrency eliminates floating-point representation errors', () => {
+  const sum = 0.1 + 0.2;
+  assert.notEqual(sum, 0.3); // IEEE 754 introduces 0.30000000000000004
+  assert.equal(roundCurrency(sum), 0.3);
+  assert.equal(roundCurrency(19.999), 20);
+  assert.equal(roundCurrency(10.505), 10.51);
+});
+
+test('account management: balances reconcile with opening balances, income, expense, and transfers', () => {
+  const accounts: Account[] = [
+    { id: '1', name: 'Bank account', type: 'bank', openingBalance: 10000 },
+    { id: '2', name: 'Cash', type: 'cash', openingBalance: 1500 },
+    { id: '3', name: 'Savings account', type: 'savings', openingBalance: 50000 },
+  ];
+
+  const transactions: Transaction[] = [
+    // Income into Bank: +25000
+    { id: newId(), type: 'income', category: 'Salary', title: 'Monthly Salary', description: '', amount: 25000, date: '2026-11-01', account: 'Bank account' },
+    // Expense from Bank: -4500
+    { id: newId(), type: 'expense', category: 'Utilities', title: 'Electricity bill', description: '', amount: 4500, date: '2026-11-02', account: 'Bank account' },
+    // Transfer from Bank to Cash (ATM withdrawal): 2000
+    { id: newId(), type: 'transfer', category: 'Transfer', title: 'ATM cash withdrawal', description: '', amount: 2000, date: '2026-11-03', account: 'Bank account', transferAccount: 'Cash' },
+    // Expense from Cash: -500
+    { id: newId(), type: 'expense', category: 'Groceries', title: 'Vegetables from market', description: '', amount: 500, date: '2026-11-04', account: 'Cash' },
+    // Transfer from Bank to Savings: 10000
+    { id: newId(), type: 'transfer', category: 'Transfer', title: 'Move to savings', description: '', amount: 10000, date: '2026-11-05', account: 'Bank account', transferAccount: 'Savings account' },
+  ];
+
+  const balances = calculateAccountBalances(accounts, transactions);
+
+  // Bank: 10000 + 25000 - 4500 - 2000 - 10000 = 18500
+  assert.equal(balances['Bank account'], 18500);
+
+  // Cash: 1500 + 2000 (transfer in) - 500 = 3000
+  assert.equal(balances['Cash'], 3000);
+
+  // Savings: 50000 + 10000 (transfer in) = 60000
+  assert.equal(balances['Savings account'], 60000);
+
+  // Total net worth before: 10000 + 1500 + 50000 = 61500
+  // Net cash flow: +25000 income - 4500 expense - 500 expense = +20000
+  // Total net worth after: 61500 + 20000 = 81500
+  const totalNetWorth = balances['Bank account'] + balances['Cash'] + balances['Savings account'];
+  assert.equal(totalNetWorth, 81500);
+});
+
+test('transfers: transfers never inflate income, expense, or net cash flow', () => {
+  const transactions: Transaction[] = [
+    { id: newId(), type: 'income', category: 'Freelance', title: 'Website gig', description: '', amount: 5000, date: '2026-11-01', account: 'Bank account' },
+    { id: newId(), type: 'expense', category: 'Dining', title: 'Lunch', description: '', amount: 350, date: '2026-11-02', account: 'Bank account' },
+    // Large transfer between accounts: ₹50,000
+    { id: newId(), type: 'transfer', category: 'Transfer', title: 'Fund transfer', description: '', amount: 50000, date: '2026-11-03', account: 'Bank account', transferAccount: 'Savings account' },
+  ];
+
+  const flow = calculateCashFlow(transactions, '2026-11');
+  assert.equal(flow.income, 5000);
+  assert.equal(flow.expense, 350);
+  assert.equal(flow.net, 4650);
+  assert.equal(flow.transferVolume, 50000);
+  assert.equal(flow.transferCount, 1);
+});
+
+test('budget calculations: calculateBudgetProgress handles calm progress and remaining balances', () => {
+  const normal = calculateBudgetProgress(10000, 3500);
+  assert.equal(normal.remaining, 6500);
+  assert.equal(normal.percent, 35);
+  assert.equal(normal.isOver, false);
+
+  const over = calculateBudgetProgress(5000, 6200);
+  assert.equal(over.remaining, -1200);
+  assert.equal(over.percent, 124);
+  assert.equal(over.isOver, true);
+});
+
+test('recurring & subscriptions: calculate next dates accurately without timezone drift', () => {
+  assert.equal(getNextRecurringDate('2026-11-01', 'daily', 3), '2026-11-04');
+  assert.equal(getNextRecurringDate('2026-11-01', 'weekly', 2), '2026-11-15');
+  assert.equal(getNextRecurringDate('2026-11-15', 'monthly', 1), '2026-12-15');
+  assert.equal(getNextRecurringDate('2026-11-15', 'yearly', 1), '2027-11-15');
+
+  assert.equal(getNextSubscriptionDate('2026-11-05', 'weekly'), '2026-11-12');
+  assert.equal(getNextSubscriptionDate('2026-11-05', 'monthly'), '2026-12-05');
+  assert.equal(getNextSubscriptionDate('2026-11-05', 'quarterly'), '2027-02-05');
+  assert.equal(getNextSubscriptionDate('2026-11-05', 'yearly'), '2027-11-05');
+});
+
+test('csv export & import: roundtrips transactions and detects duplicates correctly', () => {
+  const txs: Transaction[] = [
+    { id: newId(), type: 'expense', category: 'Groceries', title: 'DMart groceries', description: '', amount: 2450.5, date: '2026-11-02', account: 'Bank account' },
+    { id: newId(), type: 'income', category: 'Salary', title: 'October Salary', description: '', amount: 75000, date: '2026-11-01', account: 'Bank account' },
+  ];
+
+  const csv = exportTransactionsToCsv(txs);
+  assert.ok(csv.includes('DMart groceries'));
+  assert.ok(csv.includes('October Salary'));
+
+  // Parse back with existing list
+  const { valid, duplicates, errors } = parseTransactionsFromCsv(csv, txs);
+  assert.equal(errors.length, 0);
+  // All existing rows should be marked as duplicates
+  assert.equal(duplicates, 2);
+  assert.equal(valid.length, 0);
+
+  // New rows should parse as valid
+  const newCsv = `Date,Title,Type,Category,Amount,Account,Transfer Account,Notes\r\n2026-11-06,"Breakfast at Darshini",expense,Dining,120,"Cash",,"Idli and filter coffee"`;
+  const result = parseTransactionsFromCsv(newCsv, txs);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.duplicates, 0);
+  assert.equal(result.valid.length, 1);
+  assert.equal(result.valid[0].title, 'Breakfast at Darshini');
+  assert.equal(result.valid[0].amount, 120);
+  assert.equal(result.valid[0].account, 'Cash');
+});
+
 
 

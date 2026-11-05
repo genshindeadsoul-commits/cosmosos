@@ -1,7 +1,7 @@
 import { CosmosAppData, EMPTY_DATA, isUuid, newId } from './cloudData';
 import { parseMusicLink } from '../lib/musicLinks';
 import type { PlaylistItem } from '../lib/playlists';
-import type { CustomTaskListMeta } from '../types';
+import type { Account, CustomTaskListMeta, FinanceCategoryMeta, RecurringTransaction } from '../types';
 
 /** v1/v2: flat lists (older exports). v3: wrapped envelope with settings and integrity counts. */
 export const BACKUP_VERSION = 3;
@@ -15,6 +15,7 @@ export interface BackupSettings {
   playlists?: PlaylistItem[]; activePlaylistId?: string; mailFolder?: string;
   appleMusic?: { x?: number; y?: number; w?: number; h?: number; mode?: 'compact' | 'expanded' | 'minimized'; visible?: boolean };
   monthlyBudgets?: Record<string, number>;
+  categoryBudgets?: Record<string, Record<string, number>>;
   dashboardGrid?: {
     mode?: '1-col' | '2-col' | 'auto';
     autoAdapt?: boolean;
@@ -26,6 +27,10 @@ export interface BackupSettings {
   customTaskLists?: CustomTaskListMeta[];
   activeTaskWorkspaceView?: 'calendar' | 'today' | 'upcoming' | 'all' | 'lists';
   selectedTaskList?: string;
+  accounts?: Account[];
+  customFinanceCategories?: FinanceCategoryMeta[];
+  recurringTransactions?: RecurringTransaction[];
+  preferredFinanceTab?: 'transactions' | 'accounts' | 'budgets' | 'recurring' | 'reports';
 }
 
 const SECRETISH = /token|secret|password|passwd|credential|api[_-]?key|authorization|cookie|refresh/i;
@@ -137,6 +142,64 @@ export function sanitizeSettings(raw: any): BackupSettings {
   }
   if (typeof raw.selectedTaskList === 'string') {
     out.selectedTaskList = raw.selectedTaskList.trim().slice(0, 60);
+  }
+  if (Array.isArray(raw.accounts)) {
+    out.accounts = raw.accounts.slice(0, 50).filter((a: any) => a && typeof a.name === 'string' && a.name.trim().length > 0).map((a: any) => ({
+      id: typeof a.id === 'string' ? a.id : `acc-${Date.now()}`,
+      name: String(a.name).trim().slice(0, 60),
+      type: ['cash', 'bank', 'savings', 'wallet', 'credit', 'custom'].includes(a.type) ? a.type : 'custom',
+      openingBalance: typeof a.openingBalance === 'number' && Number.isFinite(a.openingBalance) ? Math.round(a.openingBalance * 100) / 100 : 0,
+      currency: typeof a.currency === 'string' ? a.currency.slice(0, 10) : undefined,
+      color: typeof a.color === 'string' ? a.color : '#2563EB',
+      isArchived: !!a.isArchived,
+      createdAt: typeof a.createdAt === 'string' ? a.createdAt : undefined,
+    }));
+  }
+  if (Array.isArray(raw.customFinanceCategories)) {
+    out.customFinanceCategories = raw.customFinanceCategories.slice(0, 100).filter((c: any) => c && typeof c.name === 'string' && c.name.trim().length > 0).map((c: any) => ({
+      id: typeof c.id === 'string' ? c.id : `cat-${Date.now()}`,
+      name: String(c.name).trim().slice(0, 60),
+      type: ['income', 'expense', 'both'].includes(c.type) ? c.type : 'expense',
+      color: typeof c.color === 'string' ? c.color : '#526B55',
+      icon: typeof c.icon === 'string' ? c.icon : undefined,
+      isDefault: !!c.isDefault,
+    }));
+  }
+  if (raw.categoryBudgets && typeof raw.categoryBudgets === 'object') {
+    const cb: Record<string, Record<string, number>> = {};
+    for (const [month, catMap] of Object.entries(raw.categoryBudgets)) {
+      if (/^\d{4}-\d{2}$/.test(month) && catMap && typeof catMap === 'object') {
+        const validCats: Record<string, number> = {};
+        for (const [cat, amt] of Object.entries(catMap as Record<string, unknown>)) {
+          if (typeof amt === 'number' && Number.isFinite(amt) && amt >= 0) {
+            validCats[cat.slice(0, 60)] = Math.round(amt * 100) / 100;
+          }
+        }
+        if (Object.keys(validCats).length > 0) cb[month] = validCats;
+      }
+    }
+    if (Object.keys(cb).length > 0) out.categoryBudgets = cb;
+  }
+  if (Array.isArray(raw.recurringTransactions)) {
+    out.recurringTransactions = raw.recurringTransactions.slice(0, 100).filter((r: any) => r && typeof r.title === 'string' && r.title.trim().length > 0).map((r: any) => ({
+      id: typeof r.id === 'string' ? r.id : `rec-${Date.now()}`,
+      title: String(r.title).trim().slice(0, 120),
+      type: ['income', 'expense', 'transfer'].includes(r.type) ? r.type : 'expense',
+      category: typeof r.category === 'string' ? r.category : 'Miscellaneous',
+      amount: typeof r.amount === 'number' && Number.isFinite(r.amount) ? Math.max(0, Math.round(r.amount * 100) / 100) : 0,
+      account: typeof r.account === 'string' ? r.account : 'Bank account',
+      transferAccount: typeof r.transferAccount === 'string' ? r.transferAccount : undefined,
+      frequency: ['daily', 'weekly', 'monthly', 'yearly'].includes(r.frequency) ? r.frequency : 'monthly',
+      interval: typeof r.interval === 'number' && r.interval > 0 ? r.interval : 1,
+      startDate: typeof r.startDate === 'string' ? r.startDate : '',
+      nextDueDate: typeof r.nextDueDate === 'string' ? r.nextDueDate : '',
+      lastGeneratedDate: typeof r.lastGeneratedDate === 'string' ? r.lastGeneratedDate : undefined,
+      status: ['active', 'paused', 'cancelled'].includes(r.status) ? r.status : 'active',
+      notes: typeof r.notes === 'string' ? r.notes.slice(0, 500) : undefined,
+    }));
+  }
+  if (['transactions', 'accounts', 'budgets', 'recurring', 'reports'].includes(raw.preferredFinanceTab)) {
+    out.preferredFinanceTab = raw.preferredFinanceTab;
   }
   return out;
 }

@@ -254,7 +254,7 @@ describe('Phase 4 — Unified Task Workspace Views', () => {
 
     // Task becomes completed
     await waitFor(() => {
-      expect(fake.db['u1'].tasks.find((t: any) => t.id === '55555555-5555-4555-8555-555555555555').status).toBe('completed');
+      expect(fake.db['u1'].tasks.find((t: any) => t.id === '55555555-5555-4555-8555-555555555555')?.status).toBe('completed');
     });
   });
 });
@@ -316,7 +316,7 @@ describe('Phase 4 — Custom Lists & Safe List Deletion', () => {
     await waitFor(() => {
       const savedTask = fake.db['u1'].tasks.find((t: any) => t.title === 'Order Italian marble tiles');
       expect(savedTask).toBeTruthy();
-      expect(savedTask.list_name).toBe('Inbox');
+      expect(savedTask?.list_name).toBe('Inbox');
     });
   });
 });

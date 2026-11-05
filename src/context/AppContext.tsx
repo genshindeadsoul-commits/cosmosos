@@ -27,6 +27,7 @@ import { nextOccurrence } from '../lib/recurrence';
 import type { ImportedEvent } from '../lib/integrationsApi';
 import { supabase } from '../lib/supabase';
 import { dateNoteTitle, dateNoteContent, isUntouchedDateNote, todayKey } from '../lib/dates';
+import { getNextSubscriptionDate } from '../lib/finance';
 
 interface Toast {
   id: string;
@@ -100,10 +101,15 @@ interface AppContextType {
   
   // Transactions & Subscriptions
   addTransaction: (tx: Omit<Transaction, 'id'>) => void;
+  addTransactions: (txs: Omit<Transaction, 'id'>[]) => void;
   updateTransaction: (tx: Transaction) => void;
+  duplicateTransaction: (id: string) => void;
   deleteTransaction: (id: string) => void;
+  reassignCategory: (oldCategory: string, newCategory: string) => void;
   addSubscription: (sub: Omit<Subscription, 'id'>) => void;
+  updateSubscription: (sub: Subscription) => void;
   deleteSubscription: (id: string) => void;
+  recordSubscriptionPayment: (subscriptionId: string, paidDate?: string) => void;
   
   // Fitness
   addWorkout: (w: Omit<WorkoutLog, 'id'>) => void;
@@ -966,7 +972,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: newId(),
     };
     setData((prev) => (prev ? { ...prev, transactions: [newTx, ...prev.transactions] } : null));
-    showToast(`${tx.type === 'income' ? 'Income' : 'Expense'} recorded: ₹${tx.amount.toLocaleString()}`, 'success');
+    showToast(`${tx.type === 'income' ? 'Income' : tx.type === 'transfer' ? 'Transfer' : 'Expense'} recorded: ₹${tx.amount.toLocaleString()}`, 'success');
+  };
+
+  const addTransactions = (txs: Omit<Transaction, 'id'>[]) => {
+    if (!txs.length) return;
+    const newTxs: Transaction[] = txs.map((tx) => ({
+      ...tx,
+      id: newId(),
+    }));
+    setData((prev) => (prev ? { ...prev, transactions: [...newTxs, ...prev.transactions] } : null));
+    showToast(`Imported ${newTxs.length} transactions`, 'success');
+  };
+
+  const duplicateTransaction = (id: string) => {
+    const target = data?.transactions.find((t) => t.id === id);
+    if (!target) return;
+    const duplicated: Transaction = {
+      ...target,
+      id: newId(),
+      title: `${target.title || target.description} (Copy)`,
+      description: `${target.title || target.description} (Copy)`,
+      date: todayKey(),
+    };
+    setData((prev) => (prev ? { ...prev, transactions: [duplicated, ...prev.transactions] } : null));
+    showToast(`Duplicated "${target.title || target.description}"`, 'success');
   };
 
   const updateTransaction = (tx: Transaction) => {
@@ -993,6 +1023,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Transaction deleted', 'info');
   };
 
+  const reassignCategory = (oldCategory: string, newCategory: string) => {
+    setData((prev) => {
+      if (!prev) return null;
+      let count = 0;
+      const updatedTxs = prev.transactions.map((t) => {
+        if (t.category === oldCategory) {
+          count++;
+          return { ...t, category: newCategory };
+        }
+        return t;
+      });
+      if (count > 0) {
+        showToast(`Reassigned ${count} transactions from "${oldCategory}" to "${newCategory}"`, 'info');
+      }
+      return { ...prev, transactions: updatedTxs };
+    });
+  };
+
   // Subscription Handlers
   const addSubscription = (sub: Omit<Subscription, 'id'>) => {
     const newSub: Subscription = {
@@ -1001,6 +1049,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setData((prev) => (prev ? { ...prev, subscriptions: [...prev.subscriptions, newSub] } : null));
     showToast(`Subscription "${sub.name}" added`, 'success');
+  };
+
+  const updateSubscription = (sub: Subscription) => {
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            subscriptions: prev.subscriptions.map((s) => (s.id === sub.id ? sub : s)),
+          }
+        : null
+    );
+    showToast(`Subscription "${sub.name}" updated`, 'success');
   };
 
   const deleteSubscription = (id: string) => {
@@ -1013,6 +1073,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : null
     );
     showToast('Subscription deleted', 'info');
+  };
+
+  const recordSubscriptionPayment = (subscriptionId: string, paidDate?: string) => {
+    const sub = data?.subscriptions.find((s) => s.id === subscriptionId);
+    if (!sub) return;
+
+    const dateToRecord = paidDate || todayKey();
+
+    // Prevent duplicate expense creation when subscription payments are generated
+    const alreadyRecorded = data?.transactions.some(
+      (t) =>
+        t.date === dateToRecord &&
+        (t.title === sub.name || t.description === sub.name) &&
+        t.amount === sub.amount &&
+        t.type === 'expense'
+    );
+
+    if (alreadyRecorded) {
+      showToast(`Payment for "${sub.name}" on ${dateToRecord} has already been recorded`, 'info');
+      return;
+    }
+
+    // 1. Create transaction in ledger
+    const newTx: Transaction = {
+      id: newId(),
+      type: 'expense',
+      title: sub.name,
+      description: sub.description || `${sub.name} subscription payment`,
+      category: sub.category || 'Utilities',
+      amount: sub.amount,
+      date: dateToRecord,
+      account: sub.account || 'Bank account',
+      notes: `Recurring subscription (${sub.billingCycle})`,
+    };
+
+    // 2. Advance renewal date to next billing cycle
+    const nextRenewal = getNextSubscriptionDate(sub.renewalDate || dateToRecord, sub.billingCycle);
+    const updatedSub: Subscription = {
+      ...sub,
+      renewalDate: nextRenewal,
+      lastPaidDate: dateToRecord,
+    };
+
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            transactions: [newTx, ...prev.transactions],
+            subscriptions: prev.subscriptions.map((s) => (s.id === sub.id ? updatedSub : s)),
+          }
+        : null
+    );
+
+    showToast(`Recorded payment of ₹${sub.amount.toLocaleString()} for "${sub.name}"`, 'success');
   };
 
   // Workout Handlers
@@ -1268,10 +1382,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteTableRow,
         addTableCollection,
         addTransaction,
+        addTransactions,
         updateTransaction,
+        duplicateTransaction,
         deleteTransaction,
+        reassignCategory,
         addSubscription,
+        updateSubscription,
         deleteSubscription,
+        recordSubscriptionPayment,
         addWorkout,
         deleteWorkout,
         addGoal,

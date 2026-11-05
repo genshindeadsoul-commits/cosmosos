@@ -1,8 +1,9 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useMemo } from 'react';
 import { requireSupabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import type { PlaylistItem } from '../lib/playlists';
-import type { CustomTaskListMeta } from '../types';
+import type { Account, CustomTaskListMeta, FinanceCategoryMeta, RecurringTransaction } from '../types';
+import { DEFAULT_ACCOUNTS, DEFAULT_FINANCE_CATEGORIES } from '../types';
 
 export type TaskWorkspaceView = 'calendar' | 'today' | 'upcoming' | 'all' | 'lists';
 
@@ -39,12 +40,17 @@ export interface Prefs {
   playlists?: PlaylistItem[];
   activePlaylistId?: string;
   monthlyBudgets?: Record<string, number>;
+  categoryBudgets?: Record<string, Record<string, number>>;
   dashboardGrid?: DashboardGridPrefs;
   preferredCalendarTab?: CalendarTab;
   lastSelectedDate?: string;
   customTaskLists?: CustomTaskListMeta[];
   activeTaskWorkspaceView?: TaskWorkspaceView;
   selectedTaskList?: string;
+  accounts?: Account[];
+  customFinanceCategories?: FinanceCategoryMeta[];
+  recurringTransactions?: RecurringTransaction[];
+  preferredFinanceTab?: 'transactions' | 'accounts' | 'budgets' | 'recurring' | 'reports';
 }
 
 interface PrefsContextType {
@@ -52,6 +58,7 @@ interface PrefsContextType {
   loaded: boolean;
   update: (patch: Prefs) => void;
   setMonthlyBudget: (monthKey: string, amount: number) => void;
+  setCategoryBudget: (monthKey: string, category: string, amount: number) => void;
   setDashboardGrid: (grid: Partial<DashboardGridPrefs>) => void;
   setPreferredCalendarTab: (tab: CalendarTab) => void;
   setLastSelectedDate: (date: string) => void;
@@ -61,6 +68,28 @@ interface PrefsContextType {
   deleteCustomTaskList: (name: string) => void;
   setActiveTaskWorkspaceView: (view: TaskWorkspaceView) => void;
   setSelectedTaskList: (listName: string) => void;
+
+  // Accounts
+  accounts: Account[];
+  createAccount: (account: Omit<Account, 'id'>) => void;
+  updateAccount: (id: string, patch: Partial<Account>) => void;
+  archiveAccount: (id: string) => void;
+  deleteAccount: (id: string) => void;
+
+  // Finance Categories
+  financeCategories: FinanceCategoryMeta[];
+  createFinanceCategory: (cat: Omit<FinanceCategoryMeta, 'id'>) => void;
+  updateFinanceCategory: (id: string, patch: Partial<FinanceCategoryMeta>) => void;
+  deleteFinanceCategory: (id: string) => void;
+
+  // Recurring Transactions
+  recurringTransactions: RecurringTransaction[];
+  createRecurringTransaction: (rec: Omit<RecurringTransaction, 'id'>) => void;
+  updateRecurringTransaction: (id: string, patch: Partial<RecurringTransaction>) => void;
+  deleteRecurringTransaction: (id: string) => void;
+  toggleRecurringStatus: (id: string) => void;
+
+  setPreferredFinanceTab: (tab: 'transactions' | 'accounts' | 'budgets' | 'recurring' | 'reports') => void;
 }
 const Ctx = createContext<PrefsContextType | undefined>(undefined);
 
@@ -182,6 +211,145 @@ export const PrefsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     update({ selectedTaskList: listName });
   }, [update]);
 
+  // Accounts
+  const accounts = useMemo(() => {
+    return prefs.accounts && prefs.accounts.length > 0 ? prefs.accounts : DEFAULT_ACCOUNTS;
+  }, [prefs.accounts]);
+
+  const createAccount = useCallback((acc: Omit<Account, 'id'>) => {
+    const trimmed = acc.name.trim();
+    if (!trimmed) return;
+    const current = latest.current.accounts && latest.current.accounts.length > 0 ? latest.current.accounts : DEFAULT_ACCOUNTS;
+    const newAcc: Account = {
+      ...acc,
+      id: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: trimmed,
+      openingBalance: Math.max(0, acc.openingBalance || 0),
+      createdAt: new Date().toISOString(),
+    };
+    update({ accounts: [...current, newAcc] });
+  }, [update]);
+
+  const updateAccount = useCallback((id: string, patch: Partial<Account>) => {
+    const current = latest.current.accounts && latest.current.accounts.length > 0 ? latest.current.accounts : DEFAULT_ACCOUNTS;
+    update({
+      accounts: current.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    });
+  }, [update]);
+
+  const archiveAccount = useCallback((id: string) => {
+    const current = latest.current.accounts && latest.current.accounts.length > 0 ? latest.current.accounts : DEFAULT_ACCOUNTS;
+    update({
+      accounts: current.map((a) => (a.id === id ? { ...a, isArchived: !a.isArchived } : a)),
+    });
+  }, [update]);
+
+  const deleteAccount = useCallback((id: string) => {
+    const current = latest.current.accounts && latest.current.accounts.length > 0 ? latest.current.accounts : DEFAULT_ACCOUNTS;
+    update({
+      accounts: current.filter((a) => a.id !== id),
+    });
+  }, [update]);
+
+  // Finance Categories
+  const financeCategories = useMemo(() => {
+    return prefs.customFinanceCategories && prefs.customFinanceCategories.length > 0
+      ? prefs.customFinanceCategories
+      : DEFAULT_FINANCE_CATEGORIES;
+  }, [prefs.customFinanceCategories]);
+
+  const createFinanceCategory = useCallback((cat: Omit<FinanceCategoryMeta, 'id'>) => {
+    const trimmed = cat.name.trim();
+    if (!trimmed) return;
+    const current = latest.current.customFinanceCategories && latest.current.customFinanceCategories.length > 0
+      ? latest.current.customFinanceCategories
+      : DEFAULT_FINANCE_CATEGORIES;
+    const newCat: FinanceCategoryMeta = {
+      ...cat,
+      id: `cat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: trimmed,
+    };
+    update({ customFinanceCategories: [...current, newCat] });
+  }, [update]);
+
+  const updateFinanceCategory = useCallback((id: string, patch: Partial<FinanceCategoryMeta>) => {
+    const current = latest.current.customFinanceCategories && latest.current.customFinanceCategories.length > 0
+      ? latest.current.customFinanceCategories
+      : DEFAULT_FINANCE_CATEGORIES;
+    update({
+      customFinanceCategories: current.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    });
+  }, [update]);
+
+  const deleteFinanceCategory = useCallback((id: string) => {
+    const current = latest.current.customFinanceCategories && latest.current.customFinanceCategories.length > 0
+      ? latest.current.customFinanceCategories
+      : DEFAULT_FINANCE_CATEGORIES;
+    update({
+      customFinanceCategories: current.filter((c) => c.id !== id),
+    });
+  }, [update]);
+
+  // Category Budgets
+  const setCategoryBudget = useCallback((monthKey: string, category: string, amount: number) => {
+    const currentMap = latest.current.categoryBudgets ?? {};
+    const monthMap = currentMap[monthKey] ?? {};
+    const safeAmount = Math.max(0, amount);
+    update({
+      categoryBudgets: {
+        ...currentMap,
+        [monthKey]: {
+          ...monthMap,
+          [category]: safeAmount,
+        },
+      },
+    });
+  }, [update]);
+
+  // Recurring Transactions
+  const recurringTransactions = useMemo(() => {
+    return prefs.recurringTransactions || [];
+  }, [prefs.recurringTransactions]);
+
+  const createRecurringTransaction = useCallback((rec: Omit<RecurringTransaction, 'id'>) => {
+    const current = latest.current.recurringTransactions || [];
+    const newRec: RecurringTransaction = {
+      ...rec,
+      id: `rec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      status: rec.status || 'active',
+    };
+    update({ recurringTransactions: [...current, newRec] });
+  }, [update]);
+
+  const updateRecurringTransaction = useCallback((id: string, patch: Partial<RecurringTransaction>) => {
+    const current = latest.current.recurringTransactions || [];
+    update({
+      recurringTransactions: current.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    });
+  }, [update]);
+
+  const deleteRecurringTransaction = useCallback((id: string) => {
+    const current = latest.current.recurringTransactions || [];
+    update({
+      recurringTransactions: current.filter((r) => r.id !== id),
+    });
+  }, [update]);
+
+  const toggleRecurringStatus = useCallback((id: string) => {
+    const current = latest.current.recurringTransactions || [];
+    update({
+      recurringTransactions: current.map((r) => {
+        if (r.id !== id) return r;
+        const nextStatus = r.status === 'active' ? 'paused' : 'active';
+        return { ...r, status: nextStatus };
+      }),
+    });
+  }, [update]);
+
+  const setPreferredFinanceTab = useCallback((tab: 'transactions' | 'accounts' | 'budgets' | 'recurring' | 'reports') => {
+    update({ preferredFinanceTab: tab });
+  }, [update]);
+
   useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); void save(); } }, [save]);   // flush on unmount
 
   return (
@@ -191,6 +359,7 @@ export const PrefsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         loaded,
         update,
         setMonthlyBudget,
+        setCategoryBudget,
         setDashboardGrid,
         setPreferredCalendarTab,
         setLastSelectedDate,
@@ -200,6 +369,21 @@ export const PrefsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteCustomTaskList,
         setActiveTaskWorkspaceView,
         setSelectedTaskList,
+        accounts,
+        createAccount,
+        updateAccount,
+        archiveAccount,
+        deleteAccount,
+        financeCategories,
+        createFinanceCategory,
+        updateFinanceCategory,
+        deleteFinanceCategory,
+        recurringTransactions,
+        createRecurringTransaction,
+        updateRecurringTransaction,
+        deleteRecurringTransaction,
+        toggleRecurringStatus,
+        setPreferredFinanceTab,
       }}
     >
       {children}

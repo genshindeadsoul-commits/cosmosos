@@ -100,8 +100,8 @@ export interface TableCollection {
   updatedAt: string;
 }
 
-export type TransactionType = 'income' | 'expense';
-export type ExpenseCategory =
+export type TransactionType = 'income' | 'expense' | 'transfer';
+export type DefaultExpenseCategory =
   | 'Salary'
   | 'Groceries'
   | 'Transportation'
@@ -111,9 +111,12 @@ export type ExpenseCategory =
   | 'Entertainment'
   | 'Utilities'
   | 'Miscellaneous'
-  | 'Affiliate';
+  | 'Affiliate'
+  | 'Transfer';
 
-export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+export type ExpenseCategory = DefaultExpenseCategory | (string & {});
+
+export const EXPENSE_CATEGORIES: DefaultExpenseCategory[] = [
   'Salary',
   'Groceries',
   'Transportation',
@@ -136,14 +139,85 @@ export interface Transaction {
   date: string;
   time?: string;
   notes?: string;
+  account?: string;
+  transferAccount?: string;
+  tags?: string[];
+  receiptUrl?: string;
+  recurringId?: string;
+}
+
+export type AccountType = 'cash' | 'bank' | 'savings' | 'wallet' | 'credit' | 'custom';
+
+export interface Account {
+  id: string;
+  name: string;
+  type: AccountType;
+  openingBalance: number;
+  currency?: string;
+  color?: string;
+  isArchived?: boolean;
+  createdAt?: string;
+}
+
+export const DEFAULT_ACCOUNTS: Account[] = [
+  { id: 'acc-bank', name: 'Bank account', type: 'bank', openingBalance: 0, color: '#2563EB' },
+  { id: 'acc-cash', name: 'Cash', type: 'cash', openingBalance: 0, color: '#16A34A' },
+  { id: 'acc-savings', name: 'Savings account', type: 'savings', openingBalance: 0, color: '#D97706' },
+  { id: 'acc-wallet', name: 'Digital wallet', type: 'wallet', openingBalance: 0, color: '#8B5CF6' },
+];
+
+export interface FinanceCategoryMeta {
+  id: string;
+  name: string;
+  type: 'income' | 'expense' | 'both';
+  color?: string;
+  icon?: string;
+  isDefault?: boolean;
+}
+
+export const DEFAULT_FINANCE_CATEGORIES: FinanceCategoryMeta[] = [
+  { id: 'cat-salary', name: 'Salary', type: 'income', color: '#16A34A', isDefault: true },
+  { id: 'cat-freelance', name: 'Freelance', type: 'income', color: '#0D9488', isDefault: true },
+  { id: 'cat-affiliate', name: 'Affiliate', type: 'income', color: '#10B981', isDefault: true },
+  { id: 'cat-savings', name: 'Savings', type: 'income', color: '#38543D', isDefault: true },
+  { id: 'cat-groceries', name: 'Groceries', type: 'expense', color: '#526B55', isDefault: true },
+  { id: 'cat-transport', name: 'Transportation', type: 'expense', color: '#8B5CF6', isDefault: true },
+  { id: 'cat-dining', name: 'Dining', type: 'expense', color: '#D97706', isDefault: true },
+  { id: 'cat-utilities', name: 'Utilities', type: 'expense', color: '#2563EB', isDefault: true },
+  { id: 'cat-entertainment', name: 'Entertainment', type: 'expense', color: '#EC4899', isDefault: true },
+  { id: 'cat-misc', name: 'Miscellaneous', type: 'expense', color: '#6B7067', isDefault: true },
+];
+
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface RecurringTransaction {
+  id: string;
+  title: string;
+  type: TransactionType;
+  category: ExpenseCategory;
+  amount: number;
+  account: string;
+  transferAccount?: string;
+  frequency: RecurringFrequency;
+  interval?: number;
+  startDate: string;
+  nextDueDate: string;
+  lastGeneratedDate?: string;
+  status: 'active' | 'paused' | 'cancelled';
+  notes?: string;
 }
 
 export interface Subscription {
   id: string;
   name: string;
+  description?: string;
   amount: number;
-  billingCycle: 'monthly' | 'yearly';
+  billingCycle: 'monthly' | 'yearly' | 'weekly' | 'quarterly';
   renewalDate: string;
+  account?: string;
+  category?: string;
+  status?: 'active' | 'paused' | 'cancelled';
+  lastPaidDate?: string;
 }
 
 export interface ExerciseEntry {
