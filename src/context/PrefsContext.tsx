@@ -4,13 +4,27 @@ import { useAuth } from './AuthContext';
 import type { PlaylistItem } from '../lib/playlists';
 
 export type DashboardGridMode = '1-col' | '2-col' | 'auto';
+export type DashboardWidgetId =
+  | 'agenda'
+  | 'tasks'
+  | 'calendar'
+  | 'focus'
+  | 'notes'
+  | 'finance'
+  | 'fitness'
+  | 'habits';
+
 export interface DashboardGridPrefs {
   mode: DashboardGridMode;
   autoAdapt?: boolean;
+  hiddenWidgets?: DashboardWidgetId[];
+  widgetOrder?: DashboardWidgetId[];
 }
 export const DEFAULT_DASHBOARD_GRID: DashboardGridPrefs = {
   mode: 'auto',
   autoAdapt: true,
+  hiddenWidgets: [],
+  widgetOrder: ['agenda', 'tasks', 'calendar', 'focus', 'notes', 'finance', 'fitness', 'habits'],
 };
 
 export type CalendarTab = 'overview' | 'tasks' | 'notes' | 'workout' | 'expenses';

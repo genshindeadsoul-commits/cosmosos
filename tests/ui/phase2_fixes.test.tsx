@@ -192,3 +192,127 @@ describe('Phase 2 Fixes — Notes Mobile Delete Accessibility', () => {
     }, { timeout: 4000 });
   });
 });
+
+describe('Phase 2 Redesign — Dashboard & Global Navigation', () => {
+  it('Sidebar renders functional groups (Home, Workspace, Personal, Connected Apps, Settings)', async () => {
+    fake.setUser({ id: 'u1', email: 'nav@test.dev' });
+    fake.db['u1'] = { ...EMPTY };
+    render(<App />);
+
+    await screen.findAllByText('Dashboard');
+    const mainNav = screen.getByRole('navigation', { name: 'Main Navigation' });
+    expect(within(mainNav).getByText('Home')).toBeTruthy();
+    expect(within(mainNav).getByText('Workspace')).toBeTruthy();
+    expect(within(mainNav).getByText('Personal')).toBeTruthy();
+    expect(within(mainNav).getByText('Connected Apps')).toBeTruthy();
+    expect(within(mainNav).getAllByText('Settings').length).toBeGreaterThanOrEqual(1);
+
+    // Verify primary buttons in navigation
+    expect(within(mainNav).getByRole('button', { name: /Dashboard/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Tasks & Calendar/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Notes/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Tables/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Expenses/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Fitness/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Goals & Habits/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Custom Trackers/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Gmail/ })).toBeTruthy();
+    expect(within(mainNav).getByRole('button', { name: /Settings/ })).toBeTruthy();
+
+    // Task Queues is outside the main module buttons
+    expect(screen.getByText('Task Queues')).toBeTruthy();
+  });
+
+  it('Dashboard displays unified agenda with next commitment and supports inline quick task capture', async () => {
+    fake.setUser({ id: 'u1', email: 'dash@test.dev' });
+    fake.db['u1'] = {
+      calendar_events: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Executive Sync',
+          event_date: '2026-11-05',
+          start_time: '10:00 AM',
+          end_time: '11:00 AM',
+          category: 'Work',
+          description: 'Quarterly review with stakeholders',
+          source: 'local',
+        },
+      ],
+    };
+
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findAllByText('Dashboard');
+
+    // Consolidated agenda displays Next Commitment banner
+    expect(screen.getByText('Next Commitment')).toBeTruthy();
+    expect(screen.getAllByText('Executive Sync').length).toBeGreaterThanOrEqual(1);
+
+    // Streamlined Quick Add Task in Today's task
+    const taskInput = screen.getByPlaceholderText('+ Add task for today...');
+    await user.type(taskInput, 'Ship Phase 2 Production Build');
+    const sendBtn = screen.getByRole('button', { name: 'Send task' });
+    await user.click(sendBtn);
+
+    // Task appears in today's task list with one-tap completion
+    expect(await screen.findByText('Ship Phase 2 Production Build')).toBeTruthy();
+    const toggleBtn = screen.getByRole('button', { name: 'Mark task Ship Phase 2 Production Build complete' });
+    expect(toggleBtn).toBeTruthy();
+
+    await user.click(toggleBtn);
+    expect(await screen.findByText('All caught up for today!')).toBeTruthy();
+    expect(screen.queryByText('Ship Phase 2 Production Build')).toBeNull();
+  });
+
+  it('Dashboard customization allows toggling widget visibility and switching layout mode', async () => {
+    fake.setUser({ id: 'u1', email: 'custom@test.dev' });
+    fake.db['u1'] = { ...EMPTY };
+
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findAllByText('Dashboard');
+
+    // Open Customize modal
+    const customizeBtn = screen.getByRole('button', { name: 'Customize dashboard' });
+    await user.click(customizeBtn);
+
+    expect(await screen.findByRole('dialog', { name: 'Customize Dashboard' })).toBeTruthy();
+    expect(screen.getByText('Grid Layout')).toBeTruthy();
+    expect(screen.getByText('Visible Widgets')).toBeTruthy();
+
+    // Layout options: One Column, Two Columns, Auto / Adaptive
+    expect(screen.getByRole('button', { name: /One Column/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Two Columns/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Auto \/ Adaptive/ })).toBeTruthy();
+
+    // Close modal
+    const doneBtn = screen.getByRole('button', { name: 'Done' });
+    await user.click(doneBtn);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('Focus timer supports collapsing to compact mode and expanding', async () => {
+    fake.setUser({ id: 'u1', email: 'focus@test.dev' });
+    fake.db['u1'] = { ...EMPTY };
+
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findAllByText('Dashboard');
+
+    // Expanded view has the task title placeholder
+    expect(screen.getByPlaceholderText('What are you focusing on?')).toBeTruthy();
+
+    // Minimize timer
+    const minimizeBtn = screen.getByTitle('Minimize timer');
+    await user.click(minimizeBtn);
+
+    // Expanded input should be hidden in compact bar
+    expect(screen.queryByPlaceholderText('What are you focusing on?')).toBeNull();
+
+    // Expand timer back
+    const expandBtn = screen.getByTitle('Expand timer');
+    await user.click(expandBtn);
+    expect(screen.getByPlaceholderText('What are you focusing on?')).toBeTruthy();
+  });
+});
+

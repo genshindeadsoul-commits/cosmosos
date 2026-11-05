@@ -9,7 +9,6 @@ import {
   Sparkles,
   CalendarDays,
   Settings,
-  Search,
   ShieldCheck,
   Globe2,
   X,
@@ -17,9 +16,8 @@ import {
   Mail,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { useAuth } from '../../context/AuthContext';
 import { useIntegrations } from '../../context/IntegrationsContext';
-import { ModuleType, TaskListType, TASK_LISTS, TASK_LIST_METADATA } from '../../types';
+import { ModuleType, TASK_LISTS, TASK_LIST_METADATA } from '../../types';
 
 interface NavItem {
   id: ModuleType;
@@ -27,16 +25,47 @@ interface NavItem {
   icon: React.ElementType;
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'notes', label: 'Notes', icon: FileText },
-  { id: 'tables', label: 'Tables', icon: Table2 },
-  { id: 'expenses', label: 'Expenses', icon: Wallet },
-  { id: 'fitness', label: 'Fitness', icon: Dumbbell },
-  { id: 'goals', label: 'Goals & Habits', icon: Target },
-  { id: 'trackers', label: 'Custom Trackers', icon: Sparkles },
-  { id: 'tasks', label: 'Tasks & Calendar', icon: CalendarDays },
-  { id: 'settings', label: 'Settings', icon: Settings },
+interface NavGroup {
+  section: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    section: 'Home',
+    items: [
+      { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ],
+  },
+  {
+    section: 'Workspace',
+    items: [
+      { id: 'tasks', label: 'Tasks & Calendar', icon: CalendarDays },
+      { id: 'notes', label: 'Notes', icon: FileText },
+      { id: 'tables', label: 'Tables', icon: Table2 },
+    ],
+  },
+  {
+    section: 'Personal',
+    items: [
+      { id: 'expenses', label: 'Expenses', icon: Wallet },
+      { id: 'fitness', label: 'Fitness', icon: Dumbbell },
+      { id: 'goals', label: 'Goals & Habits', icon: Target },
+      { id: 'trackers', label: 'Custom Trackers', icon: Sparkles },
+    ],
+  },
+  {
+    section: 'Connected Apps',
+    items: [
+      { id: 'mail', label: 'Gmail', icon: Mail },
+    ],
+  },
+  {
+    section: 'Settings',
+    items: [
+      { id: 'settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ];
 
 export const Sidebar: React.FC = () => {
@@ -45,12 +74,10 @@ export const Sidebar: React.FC = () => {
     setActiveModule,
     isSidebarOpen,
     setSidebarOpen,
-    setSearchOpen,
     tasks,
     tables,
     setSelectedTableId,
     userProfile,
-    setProfileOpen,
   } = useApp();
   const { isConnected } = useIntegrations();
 
@@ -110,56 +137,65 @@ export const Sidebar: React.FC = () => {
         </div>
 
         {/* Scrollable Navigation */}
-        <div className="flex-1 overflow-y-auto px-3 py-1 space-y-4">
-          {/* Main Module Nav */}
-          <nav className="space-y-0.5" aria-label="Main Navigation">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeModule === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavClick(item.id)}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                    isActive
-                      ? 'bg-[#3D5240] text-white dark:bg-[#303B2E] dark:text-[#A8BDA1]'
-                      : 'text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27] hover:text-[#252821] dark:hover:text-[#ECEDE6]'
-                  }`}
-                >
-                  <Icon className={`h-4 w-4 ${isActive ? 'text-white dark:text-[#A8BDA1]' : 'text-[#8A8E85]'}`} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Quick launchers: Gmail and the music hub */}
-          <div className="pt-2 border-t border-[#DFE1D9] dark:border-[#383D35]">
-            <div className="px-3 pb-1.5 text-[11px] font-bold tracking-wider text-[#8A8E85] uppercase">
-              Channels
-            </div>
-            <div className="space-y-0.5">
-              <button
-                onClick={() => {
-                  handleNavClick('mail');
-                  if (window.innerWidth < 768) setSidebarOpen(false);
-                }}
-                className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Mail className="h-4 w-4 text-rose-500 dark:text-rose-400" />
-                  <span>Gmail</span>
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+          {/* Main Module Nav Grouped */}
+          <nav className="space-y-3" aria-label="Main Navigation">
+            {NAV_GROUPS.map((group) => (
+              <div key={group.section} className="space-y-1">
+                <div className="px-2.5 text-[10px] font-bold tracking-wider text-[#8A8E85] uppercase">
+                  {group.section}
                 </div>
-                <span className="text-[10px] font-semibold text-[#8A8E85]">{isConnected('gmail') ? 'Connected' : 'Not connected'}</span>
-              </button>
-            </div>
-          </div>
+                <div className="space-y-0.5">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeModule === item.id;
+                    const isMail = item.id === 'mail';
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavClick(item.id)}
+                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                          isActive
+                            ? 'bg-[#3D5240] text-white dark:bg-[#303B2E] dark:text-[#A8BDA1]'
+                            : 'text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27] hover:text-[#252821] dark:hover:text-[#ECEDE6]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Icon
+                            className={`h-4 w-4 shrink-0 ${
+                              isActive
+                                ? 'text-white dark:text-[#A8BDA1]'
+                                : isMail
+                                ? 'text-rose-500 dark:text-rose-400'
+                                : 'text-[#8A8E85]'
+                            }`}
+                          />
+                          <span>{item.label}</span>
+                        </div>
+                        {isMail && (
+                          <span
+                            className={`text-[10px] font-semibold ${
+                              isConnected('gmail')
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-[#8A8E85]'
+                            }`}
+                          >
+                            {isConnected('gmail') ? 'Connected' : 'Not connected'}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
 
           {/* Task Lists Section */}
           <div className="pt-2 border-t border-[#DFE1D9] dark:border-[#383D35]">
-            <div className="flex items-center justify-between px-3 pb-1.5 text-[11px] font-bold tracking-wider text-[#8A8E85] uppercase">
-              <span>Task Lists</span>
-              <span className="font-medium text-[10px]">
+            <div className="flex items-center justify-between px-2.5 pb-1 text-[10px] font-bold tracking-wider text-[#8A8E85] uppercase">
+              <span>Task Queues</span>
+              <span className="font-medium text-[10px] text-[#8A8E85]">
                 {tasks.filter((t) => t.status !== 'completed').length} Active
               </span>
             </div>
@@ -171,9 +207,9 @@ export const Sidebar: React.FC = () => {
                   <button
                     key={listName}
                     onClick={() => handleNavClick('tasks')}
-                    className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
+                    className="flex w-full items-center justify-between rounded-lg px-2.5 py-1 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2">
                       <span className={`h-2 w-2 rounded-full ${meta.dotColor}`} />
                       <span>{meta.label}</span>
                     </div>
@@ -185,23 +221,25 @@ export const Sidebar: React.FC = () => {
           </div>
 
           {/* Tables Section */}
-          <div className="pt-2 border-t border-[#DFE1D9] dark:border-[#383D35]">
-            <div className="px-3 pb-1.5 text-[11px] font-bold tracking-wider text-[#8A8E85] uppercase">
-              Tables
+          {tables.length > 0 && (
+            <div className="pt-2 border-t border-[#DFE1D9] dark:border-[#383D35]">
+              <div className="px-2.5 pb-1 text-[10px] font-bold tracking-wider text-[#8A8E85] uppercase">
+                Tables
+              </div>
+              <div className="space-y-0.5">
+                {tables.map((tbl) => (
+                  <button
+                    key={tbl.id}
+                    onClick={() => handleTableClick(tbl.id)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27] truncate text-left"
+                  >
+                    <BookOpen className="h-3.5 w-3.5 shrink-0 text-[#8A8E85]" />
+                    <span className="truncate">{tbl.name}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-0.5">
-              {tables.map((tbl) => (
-                <button
-                  key={tbl.id}
-                  onClick={() => handleTableClick(tbl.id)}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27] truncate text-left"
-                >
-                  <BookOpen className="h-3.5 w-3.5 shrink-0 text-[#8A8E85]" />
-                  <span className="truncate">{tbl.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Footer: Local-First Storage badge */}

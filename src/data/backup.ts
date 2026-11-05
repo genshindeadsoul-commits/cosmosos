@@ -14,7 +14,12 @@ export interface BackupSettings {
   playlists?: PlaylistItem[]; activePlaylistId?: string; mailFolder?: string;
   appleMusic?: { x?: number; y?: number; w?: number; h?: number; mode?: 'compact' | 'expanded' | 'minimized'; visible?: boolean };
   monthlyBudgets?: Record<string, number>;
-  dashboardGrid?: { mode?: '1-col' | '2-col' | 'auto'; autoAdapt?: boolean };
+  dashboardGrid?: {
+    mode?: '1-col' | '2-col' | 'auto';
+    autoAdapt?: boolean;
+    hiddenWidgets?: string[];
+    widgetOrder?: string[];
+  };
   preferredCalendarTab?: 'overview' | 'tasks' | 'notes' | 'workout' | 'expenses';
   lastSelectedDate?: string;
 }
@@ -93,8 +98,20 @@ export function sanitizeSettings(raw: any): BackupSettings {
       ? '2-col'
       : undefined;
     const autoAdapt = typeof dg.autoAdapt === 'boolean' ? dg.autoAdapt : undefined;
-    if (mode !== undefined || autoAdapt !== undefined) {
-      out.dashboardGrid = { mode: mode as any, autoAdapt };
+    const VALID_WIDGETS = ['agenda', 'tasks', 'calendar', 'focus', 'notes', 'finance', 'fitness', 'habits'];
+    const hiddenWidgets = Array.isArray(dg.hiddenWidgets)
+      ? dg.hiddenWidgets.filter((w: any) => typeof w === 'string' && VALID_WIDGETS.includes(w))
+      : undefined;
+    const widgetOrder = Array.isArray(dg.widgetOrder)
+      ? dg.widgetOrder.filter((w: any) => typeof w === 'string' && VALID_WIDGETS.includes(w))
+      : undefined;
+    if (mode !== undefined || autoAdapt !== undefined || (hiddenWidgets && hiddenWidgets.length > 0) || (widgetOrder && widgetOrder.length > 0)) {
+      out.dashboardGrid = {
+        mode: mode as any,
+        autoAdapt,
+        ...(hiddenWidgets && hiddenWidgets.length > 0 ? { hiddenWidgets } : {}),
+        ...(widgetOrder && widgetOrder.length > 0 ? { widgetOrder } : {}),
+      };
     }
   }
   if (['overview', 'tasks', 'notes', 'workout', 'expenses'].includes(raw.preferredCalendarTab)) {
