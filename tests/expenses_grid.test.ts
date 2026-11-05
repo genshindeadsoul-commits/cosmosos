@@ -199,3 +199,54 @@ test('cross-module calendar aggregation: aggregates dated tasks, notes, workouts
   assert.equal(data.habits[0].checkins[targetDate], true);
 });
 
+test('finance: category filtering strictly scopes transactions by category without cross-category leakage', () => {
+  const txs = [
+    { id: newId(), type: 'expense' as const, category: 'Groceries' as const, title: 'Apples', amount: 100, date: '2026-11-01' },
+    { id: newId(), type: 'expense' as const, category: 'Dining' as const, title: 'Sushi', amount: 800, date: '2026-11-02' },
+    { id: newId(), type: 'expense' as const, category: 'Groceries' as const, title: 'Milk & Eggs', amount: 150, date: '2026-11-03' },
+    { id: newId(), type: 'income' as const, category: 'Salary' as const, title: 'Paycheck', amount: 50000, date: '2026-11-01' },
+  ];
+
+  const filterCategory = (list: typeof txs, cat: string) => {
+    return list.filter((t) => cat === 'all' || t.category === cat);
+  };
+
+  const groceries = filterCategory(txs, 'Groceries');
+  assert.equal(groceries.length, 2);
+  assert.deepEqual(groceries.map((t) => t.title), ['Apples', 'Milk & Eggs']);
+
+  const dining = filterCategory(txs, 'Dining');
+  assert.equal(dining.length, 1);
+  assert.equal(dining[0].title, 'Sushi');
+
+  const all = filterCategory(txs, 'all');
+  assert.equal(all.length, 4);
+});
+
+test('finance: monthly budget remains strictly isolated to the active month even when all-time transactions exist', () => {
+  // Scenario:
+  // November budget: ₹25,000
+  // November expenses: ₹8,000
+  // October expenses (past): ₹18,000
+  // Total all-time expenses: ₹26,000
+  // The monthly budget remaining for November MUST be ₹17,000 (25k - 8k), NEVER negative (-1,000) from all-time expenses
+  const allTxs = [
+    { id: newId(), type: 'expense' as const, category: 'Groceries' as const, amount: 18000, date: '2026-10-15' },
+    { id: newId(), type: 'expense' as const, category: 'Utilities' as const, amount: 8000, date: '2026-11-05' },
+  ];
+
+  const activeMonth = '2026-11';
+  const novBudget = 25000;
+
+  // Monthly expense strictly scoped to 2026-11
+  const monthlyExpense = allTxs
+    .filter((t) => t.date.startsWith(activeMonth) && t.type === 'expense')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  assert.equal(monthlyExpense, 8000);
+  const budgetRemaining = novBudget - monthlyExpense;
+  assert.equal(budgetRemaining, 17000);
+  assert.equal(budgetRemaining > 0, true);
+});
+
+

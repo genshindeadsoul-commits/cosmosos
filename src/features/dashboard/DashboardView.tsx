@@ -26,6 +26,7 @@ import { DayDetailsModal } from '../../components/calendar/DayDetailsModal';
 
 export const DashboardView: React.FC = () => {
   const {
+    userProfile,
     tasks,
     events,
     notes,
@@ -52,6 +53,13 @@ export const DashboardView: React.FC = () => {
   const { prefs } = usePrefs();
   const gridPrefs = prefs.dashboardGrid ?? DEFAULT_DASHBOARD_GRID;
   const { mode } = gridPrefs;
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  }, []);
 
   const mainGridCols = useMemo(() => {
     if (mode === '1-col') return 'grid grid-cols-1 gap-5 w-full';
@@ -143,7 +151,7 @@ export const DashboardView: React.FC = () => {
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
           <div className="lg:col-span-7 space-y-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#1E3022] dark:text-[#ECEDE6]">
-              Good Morning, John
+              {greeting}, {userProfile?.name?.trim() || 'there'}
             </h1>
             <p className="text-sm font-medium text-[#38543D] dark:text-[#A6AB9F]">
               You have{' '}

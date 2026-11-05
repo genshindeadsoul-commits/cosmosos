@@ -103,10 +103,11 @@ export const QuickCaptureModal: React.FC = () => {
     addTransaction({
       type: txType,
       category: txCategory,
+      title: txDescription.trim(),
       description: txDescription.trim(),
       amount: num,
-      date: new Date().toISOString().slice(0, 10),
-      time: '12:00 PM',
+      date: todayKey(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     });
     setTxAmount('');
     setTxDescription('');
@@ -121,7 +122,7 @@ export const QuickCaptureModal: React.FC = () => {
     }
     addWorkout({
       title: workoutTitle.trim(),
-      date: new Date().toISOString().slice(0, 10),
+      date: todayKey(),
       durationMinutes: parseInt(workoutDuration) || 45,
       calories: parseInt(workoutCalories) || 300,
       exercises: workoutExercises

@@ -255,9 +255,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   // User Profile: derived from the authenticated account, never hardcoded.
   const { user, signOut: authSignOut } = useAuth();
-  const [displayName, setDisplayName] = useState<string>(
-    () => (user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User') as string
-  );
+  const [displayName, setDisplayName] = useState<string>(() => {
+    if (user?.id) {
+      try {
+        const cached = localStorage.getItem(`cosmos_profile_name:${user.id}`);
+        if (cached?.trim()) return cached.trim();
+      } catch {}
+    }
+    return (user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User') as string;
+  });
+
+  // Keep displayName in sync when the user session becomes available
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      const cached = localStorage.getItem(`cosmos_profile_name:${user.id}`);
+      if (cached?.trim()) {
+        setDisplayName(cached.trim());
+        return;
+      }
+    } catch {}
+    const authFallback = (user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User') as string;
+    setDisplayName((prev) => (prev === 'User' || !prev ? authFallback : prev));
+  }, [user?.id]);
+
   const userProfile: UserProfile = useMemo(() => ({
     name: displayName,
     email: user?.email ?? '',
@@ -276,6 +297,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     supabase.from('profiles').update({ display_name: nextName }).eq('id', user.id).then(({ error }) => {
       if (error) { showToast(`Profile not saved: ${error.message}`, 'error'); return; }
       setDisplayName(nextName);
+      try {
+        localStorage.setItem(`cosmos_profile_name:${user.id}`, nextName);
+      } catch {}
       showToast('Profile updated', 'success');
     });
   };
@@ -363,7 +387,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setData(loaded.data);
       const th = settings.data?.theme;
       if (th === 'light' || th === 'dark' || th === 'system') { setThemePrefState(th); localStorage.setItem('cosmos_theme_cache', th); }
-      if (profile.data?.display_name) setDisplayName(profile.data.display_name);
+      if (profile.data?.display_name?.trim()) {
+        const remoteName = profile.data.display_name.trim();
+        setDisplayName(remoteName);
+        try {
+          localStorage.setItem(`cosmos_profile_name:${user.id}`, remoteName);
+        } catch {}
+      }
       setSelectedNoteId(loaded.data.notes[0]?.id ?? null);
       setSelectedTableId(loaded.data.tables[0]?.id ?? '');
       setSelectedTrackerId(loaded.data.trackers[0]?.id ?? '');

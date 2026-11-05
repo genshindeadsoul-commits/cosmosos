@@ -205,7 +205,7 @@ export const NotesView: React.FC = () => {
                           toggleStarNote(n.id);
                         }}
                         aria-label="Star note"
-                        className="p-0.5 text-amber-300 hover:scale-110"
+                        className="p-1 text-amber-300 hover:scale-110 min-h-[28px] min-w-[28px] flex items-center justify-center shrink-0"
                       >
                         <Star
                           className={`h-3.5 w-3.5 ${
@@ -270,21 +270,21 @@ export const NotesView: React.FC = () => {
         >
           {selectedNote ? (
             <>
-              {/* Editor Toolbar */}
+              {/* Editor Primary Toolbar */}
               <div className="flex items-center justify-between border-b border-[#DFE1D9] dark:border-[#383D35] px-3 sm:px-4 py-2 gap-2 min-w-0">
-                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 overflow-x-auto no-scrollbar">
+                <div className="flex items-center gap-2 min-w-0">
                   {/* Mobile Back Button */}
                   <button
                     onClick={() => setIsMobileEditorOpen(false)}
                     aria-label="Back to notes list"
-                    className="flex items-center gap-1 text-xs font-semibold text-[#526B55] dark:text-[#A8BDA1] md:hidden pr-2 border-r border-[#DFE1D9] dark:border-[#383D35] shrink-0"
+                    className="flex items-center gap-1 min-h-[36px] px-2 py-1 rounded-lg text-xs font-semibold text-[#526B55] dark:text-[#A8BDA1] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27] md:hidden shrink-0 border border-[#DFE1D9] dark:border-[#383D35]"
                   >
                     <ArrowLeft className="h-4 w-4" />
                     <span>Notes</span>
                   </button>
 
-                  {/* Formatting Buttons */}
-                  <div className="flex items-center gap-0.5 shrink-0">
+                  {/* Desktop Formatting Buttons (inline on md+) */}
+                  <div className="hidden md:flex items-center gap-0.5 shrink-0 pl-1">
                     <button
                       onClick={() => insertFormatting('**', '**')}
                       title="Bold"
@@ -336,9 +336,9 @@ export const NotesView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Right controls: Save badge & Delete */}
+                {/* Right controls: Save badge & Actions */}
                 <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                  <span className="flex items-center gap-1 text-[11px] text-[#477653] dark:text-[#91B594] font-medium">
+                  <span className="hidden sm:flex items-center gap-1 text-[11px] text-[#477653] dark:text-[#91B594] font-medium pr-1">
                     <Check className="h-3 w-3" />
                     <span role="status">{syncStatus === 'saving' ? 'Saving…' : syncStatus === 'error' ? 'Not saved' : 'Saved'}</span>
                   </span>
@@ -348,7 +348,7 @@ export const NotesView: React.FC = () => {
                     aria-label="Schedule this note"
                     aria-expanded={scheduleOpen}
                     title="Schedule: create a dated task linked to this note"
-                    className="rounded p-1 text-[#8A8E85] hover:text-[#526B55]"
+                    className="flex items-center justify-center min-h-[36px] min-w-[36px] rounded-lg p-1 text-[#8A8E85] hover:text-[#526B55] hover:bg-[#F5F5F0] dark:hover:bg-[#292D27] transition-colors"
                   >
                     <CalendarPlus className="h-4 w-4" />
                   </button>
@@ -392,28 +392,30 @@ export const NotesView: React.FC = () => {
                   <button
                     onClick={() => toggleStarNote(selectedNote.id)}
                     aria-label="Star document"
-                    className="rounded p-1 text-[#8A8E85] hover:text-amber-500"
+                    className="flex items-center justify-center min-h-[36px] min-w-[36px] rounded-lg p-1 text-[#8A8E85] hover:text-amber-500 hover:bg-[#F5F5F0] dark:hover:bg-[#292D27] transition-colors"
                   >
                     <Star
                       className={`h-4 w-4 ${selectedNote.starred ? 'fill-amber-400 text-amber-400' : ''}`}
                     />
                   </button>
+
+                  {/* Accessible Delete Button with Confirmation */}
                   {confirmDeleteNoteId === selectedNote.id ? (
-                    <div className="flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 px-2 py-1 rounded-lg border border-rose-200 dark:border-rose-900">
-                      <span className="text-[10px] font-semibold text-rose-700 dark:text-rose-300">Delete?</span>
+                    <div className="flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/60 px-2 py-1 rounded-lg border border-rose-200 dark:border-rose-900 shadow-xs">
+                      <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300">Delete?</span>
                       <button
                         onClick={() => {
                           deleteNote(selectedNote.id);
                           setConfirmDeleteNoteId(null);
                           setIsMobileEditorOpen(false);
                         }}
-                        className="text-[10px] font-bold text-rose-600 hover:underline"
+                        className="min-h-[32px] px-2.5 rounded bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white shadow-xs transition-colors"
                       >
                         Yes
                       </button>
                       <button
                         onClick={() => setConfirmDeleteNoteId(null)}
-                        className="text-[10px] text-[#8A8E85] hover:underline"
+                        className="min-h-[32px] px-2 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27] rounded transition-colors"
                       >
                         No
                       </button>
@@ -422,11 +424,67 @@ export const NotesView: React.FC = () => {
                     <button
                       onClick={() => setConfirmDeleteNoteId(selectedNote.id)}
                       aria-label="Delete note"
-                      className="rounded p-1 text-[#8A8E85] hover:text-rose-500"
+                      className="flex items-center justify-center min-h-[36px] min-w-[36px] p-2 text-[#8A8E85] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   )}
+                </div>
+              </div>
+
+              {/* Mobile Formatting Secondary Toolbar (only on mobile) */}
+              <div className="md:hidden flex items-center gap-1 border-b border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/60 dark:bg-[#181A17]/60 px-3 py-1.5 overflow-x-auto no-scrollbar">
+                <button
+                  onClick={() => insertFormatting('**', '**')}
+                  title="Bold"
+                  aria-label="Bold text"
+                  className="rounded min-h-[32px] min-w-[32px] flex items-center justify-center text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
+                >
+                  <Bold className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => insertFormatting('*', '*')}
+                  title="Italic"
+                  aria-label="Italic text"
+                  className="rounded min-h-[32px] min-w-[32px] flex items-center justify-center text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
+                >
+                  <Italic className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => insertFormatting('## ')}
+                  title="Heading"
+                  aria-label="Insert heading"
+                  className="rounded min-h-[32px] min-w-[32px] flex items-center justify-center text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
+                >
+                  <Heading2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => insertFormatting('- ')}
+                  title="List"
+                  aria-label="Insert list bullet"
+                  className="rounded min-h-[32px] min-w-[32px] flex items-center justify-center text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => insertFormatting('> ')}
+                  title="Quote"
+                  aria-label="Insert quote block"
+                  className="rounded min-h-[32px] min-w-[32px] flex items-center justify-center text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
+                >
+                  <Quote className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => insertFormatting('`', '`')}
+                  title="Inline Code"
+                  aria-label="Insert code"
+                  className="rounded min-h-[32px] min-w-[32px] flex items-center justify-center text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#ECEDE7] dark:hover:bg-[#292D27]"
+                >
+                  <Code className="h-3.5 w-3.5" />
+                </button>
+                <div className="ml-auto sm:hidden flex items-center gap-1 text-[11px] text-[#477653] dark:text-[#91B594] font-medium pr-1">
+                  <Check className="h-3 w-3" />
+                  <span role="status">{syncStatus === 'saving' ? 'Saving…' : syncStatus === 'error' ? 'Not saved' : 'Saved'}</span>
                 </div>
               </div>
 

@@ -15,8 +15,8 @@ export const calls: { op: string; table: string; n?: number }[] = [];
 let currentUser: any = null;
 const listeners = new Set<(e: string, s: any) => void>();
 
-export function setUser(u: { id: string; email: string } | null, admin = false) {
-  currentUser = u ? { id: u.id, email: u.email, user_metadata: { full_name: u.email.split('@')[0] }, __admin: admin } : null;
+export function setUser(u: { id: string; email: string; user_metadata?: any } | null, admin = false) {
+  currentUser = u ? { id: u.id, email: u.email, user_metadata: u.user_metadata ?? { full_name: u.email.split('@')[0] }, __admin: admin } : null;
 }
 export const session = () => (currentUser ? { user: currentUser } : null);
 export const emit = (e: string) => listeners.forEach((l) => l(e, session()));
@@ -34,7 +34,7 @@ function from(t: string) {
         then: (res: any) => res({ data: rows(), error: null }),
         maybeSingle: async () => {
           if (t === 'app_admins') return { data: currentUser?.__admin ? { user_id: currentUser.id } : null, error: null };
-          return { data: rows()[0] ?? (t === 'user_settings' ? { theme: 'dark' } : t === 'profiles' ? { display_name: currentUser?.email.split('@')[0] } : null), error: null };
+          return { data: rows()[0] ?? (t === 'user_settings' ? { theme: 'dark' } : t === 'profiles' ? { display_name: currentUser?.user_metadata?.full_name || currentUser?.email.split('@')[0] } : null), error: null };
         },
       };
       return b;
@@ -42,7 +42,17 @@ function from(t: string) {
     upsert: async (rows: Row[] | Row) => { if (failWrites.on) return { error: { message: 'simulated outage' } }; if (failTables.has(t)) return { error: { message: 'simulated failure in ' + t } }; const arr = Array.isArray(rows) ? rows : [rows]; calls.push({ op: 'upsert', table: t, n: arr.length }); for (const r of arr) { const e = uuidError(t, r); if (e) return { error: e }; }
       for (const r of arr) { const uid = r.user_id ?? currentUser?.id; const k = ((db[uid] ??= {})[t] ??= []); const i = k.findIndex((x) => x.id === r.id && x.habit_id === r.habit_id && x.checkin_date === r.checkin_date); if (i >= 0) k[i] = { ...k[i], ...r, user_id: uid }; else k.push({ ...r, user_id: uid }); }
       return { error: null }; },
-    update: () => ({ eq: async () => ({ error: null }) }),
+    update: (updates: Row = {}) => ({
+      eq: async (_col: string, _val: any) => {
+        if (t === 'profiles' && updates.display_name && currentUser) {
+          currentUser.user_metadata = { ...currentUser.user_metadata, full_name: updates.display_name };
+          const k = tbl(t);
+          if (k.length > 0) k[0] = { ...k[0], display_name: updates.display_name };
+          else k.push({ id: _val, display_name: updates.display_name });
+        }
+        return { error: null };
+      },
+    }),
     delete() { const f: Row = {}; const q: any = { eq(c: string, v: any) { f[c] = v; return q; }, then(res: any) {
       calls.push({ op: 'delete', table: t }); const k = tbl(t); for (let i = k.length - 1; i >= 0; i--) if (Object.entries(f).every(([c, v]) => k[i][c] === v)) k.splice(i, 1); res({ error: null }); } }; return q; },
   };

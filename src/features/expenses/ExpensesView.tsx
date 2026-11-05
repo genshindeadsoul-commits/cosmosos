@@ -37,6 +37,7 @@ export const ExpensesView: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
   const [isAddTxOpen, setIsAddTxOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
@@ -110,10 +111,19 @@ export const ExpensesView: React.FC = () => {
 
   const netBalance = totalIncome - totalExpense;
 
-  // Monthly Budget calculations (strict separation per Part 11)
+  // Monthly expense strictly scoped to selectedMonth for budget tracking
+  const monthlyExpense = useMemo(
+    () =>
+      transactions
+        .filter((t) => t.date.startsWith(selectedMonth) && t.type === 'expense')
+        .reduce((sum, t) => sum + t.amount, 0),
+    [transactions, selectedMonth]
+  );
+
+  // Monthly Budget calculations (strictly bound to selectedMonth)
   const isBudgetEnabled = currentBudget > 0;
-  const budgetRemaining = currentBudget - totalExpense;
-  const budgetUsagePercent = isBudgetEnabled ? (totalExpense / currentBudget) * 100 : 0;
+  const budgetRemaining = currentBudget - monthlyExpense;
+  const budgetUsagePercent = isBudgetEnabled ? (monthlyExpense / currentBudget) * 100 : 0;
   const isOverBudget = isBudgetEnabled && budgetRemaining < 0;
 
   const incomeStreamsCount = scopedTransactions.filter((t) => t.type === 'income').length;
@@ -156,9 +166,10 @@ export const ExpensesView: React.FC = () => {
       const catMatch = t.category.toLowerCase().includes(q);
       const matchesSearch = !q || titleMatch || descMatch || catMatch;
       const matchesType = filterType === 'all' || t.type === filterType;
-      return matchesSearch && matchesType;
+      const matchesCategory = filterCategory === 'all' || t.category === filterCategory;
+      return matchesSearch && matchesType && matchesCategory;
     });
-  }, [transactions, viewScope, selectedMonth, searchQuery, filterType]);
+  }, [transactions, viewScope, selectedMonth, searchQuery, filterType, filterCategory]);
 
   const handleAddTxSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -390,7 +401,7 @@ export const ExpensesView: React.FC = () => {
                 {budgetRemaining < 0 ? '-' : ''}₹{Math.abs(budgetRemaining).toLocaleString()}
               </div>
               <div className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F] truncate">
-                Budget: ₹{currentBudget.toLocaleString()} · Removals: ₹{totalExpense.toLocaleString()}
+                Budget: ₹{currentBudget.toLocaleString()} · Removals: ₹{monthlyExpense.toLocaleString()}
               </div>
               {/* Visual Spending Progress Bar */}
               <div className="w-full bg-[#E8EEE6] dark:bg-[#2A2E28] h-2 rounded-full overflow-hidden mt-1.5">
@@ -462,7 +473,42 @@ export const ExpensesView: React.FC = () => {
               <option value="income">Incomes Only</option>
               <option value="expense">Expenses Only</option>
             </select>
+
+            <select
+              aria-label="Filter transactions by category"
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full sm:w-auto rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-1.5 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
+            >
+              <option value="all">All Categories</option>
+              <option value="Groceries">Groceries</option>
+              <option value="Dining">Dining</option>
+              <option value="Transportation">Transportation</option>
+              <option value="Utilities">Utilities</option>
+              <option value="Savings">Savings</option>
+              <option value="Entertainment">Entertainment</option>
+              <option value="Salary">Salary</option>
+              <option value="Freelance">Freelance</option>
+              <option value="Affiliate">Affiliate</option>
+              <option value="Miscellaneous">Miscellaneous</option>
+            </select>
           </div>
+
+          {filterCategory !== 'all' && (
+            <div className="flex items-center gap-2 pt-1 text-xs">
+              <span className="text-[#6B7067] dark:text-[#A6AB9F]">Filtered by category:</span>
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-[#E8EEE6] dark:bg-[#303B2E] px-2 py-0.5 text-xs font-bold text-[#3D5240] dark:text-[#A8BDA1]">
+                <span>{filterCategory}</span>
+                <button
+                  onClick={() => setFilterCategory('all')}
+                  aria-label="Clear category filter"
+                  className="hover:text-rose-600 font-bold ml-0.5"
+                >
+                  ×
+                </button>
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Desktop View: Responsive Table */}
@@ -682,9 +728,19 @@ export const ExpensesView: React.FC = () => {
                 </div>
               ) : (
                 categoryBreakdown.map((item) => (
-                  <div key={item.category} className="flex items-center justify-between text-xs">
+                  <button
+                    key={item.category}
+                    type="button"
+                    onClick={() => setFilterCategory((prev) => (prev === item.category ? 'all' : item.category))}
+                    title={`Click to filter by ${item.category}`}
+                    className={`w-full flex items-center justify-between text-xs px-2 py-1.5 rounded-lg transition-colors text-left ${
+                      filterCategory === item.category
+                        ? 'bg-[#E8EEE6] dark:bg-[#303B2E] ring-1 ring-[#3D5240] dark:ring-[#526B55]'
+                        : 'hover:bg-[#F5F5F0] dark:hover:bg-[#292D27]'
+                    }`}
+                  >
                     <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
                       <span className="font-semibold text-[#252821] dark:text-[#ECEDE6]">
                         {item.category}
                       </span>
@@ -697,7 +753,7 @@ export const ExpensesView: React.FC = () => {
                         {item.percentage}%
                       </span>
                     </div>
-                  </div>
+                  </button>
                 ))
               )}
             </div>

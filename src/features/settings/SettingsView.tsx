@@ -33,6 +33,9 @@ import { DriveBackupPanel } from './DriveBackupPanel';
 
 export const SettingsView: React.FC = () => {
   const {
+    userProfile,
+    updateUserProfile,
+    setProfileOpen,
     exportBackup,
     openMusicHub,
     importBackup,
@@ -48,6 +51,23 @@ export const SettingsView: React.FC = () => {
 
   const [expandedId, setExpandedId] = useState<string | null>('gcal');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [settingsNameInput, setSettingsNameInput] = useState(userProfile?.name ?? '');
+
+  React.useEffect(() => {
+    if (userProfile?.name) {
+      setSettingsNameInput(userProfile.name);
+    }
+  }, [userProfile?.name]);
+
+  const handleSaveSettingsName = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = settingsNameInput.trim();
+    if (!trimmed) {
+      showToast('Name cannot be empty', 'warning');
+      return;
+    }
+    updateUserProfile({ name: trimmed });
+  };
 
   const handleToggleAccordion = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -113,6 +133,57 @@ export const SettingsView: React.FC = () => {
         <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F]">
           Manage appearance, cloud accounts, Google Workspace integrations, device reminders, and local data persistence.
         </p>
+      </div>
+
+      {/* Account & Profile Card */}
+      <div className="rounded-2xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
+              Account & Profile
+            </h2>
+            <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F]">
+              Your identity across Cosmos OS
+            </p>
+          </div>
+          <button
+            onClick={() => setProfileOpen(true)}
+            className="text-xs font-semibold text-[#526B55] dark:text-[#A8BDA1] hover:underline"
+          >
+            Open Full Profile
+          </button>
+        </div>
+
+        <form onSubmit={handleSaveSettingsName} className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-[#6B7067] dark:text-[#A6AB9F] mb-1">
+              Display Name
+            </label>
+            <input
+              type="text"
+              aria-label="Display Name"
+              value={settingsNameInput}
+              onChange={(e) => setSettingsNameInput(e.target.value)}
+              className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-1.5 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
+              placeholder="Your name"
+            />
+          </div>
+          <div className="flex items-center gap-2 sm:self-end">
+            <button
+              type="submit"
+              disabled={!settingsNameInput.trim() || settingsNameInput.trim() === userProfile.name}
+              className="rounded-lg bg-[#3D5240] hover:bg-[#2E3F31] dark:bg-[#526B55] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition-colors disabled:opacity-50"
+            >
+              Save Name
+            </button>
+          </div>
+        </form>
+
+        <div className="text-[11px] text-[#6B7067] dark:text-[#A6AB9F] flex flex-wrap gap-4 pt-1 border-t border-[#DFE1D9]/60 dark:border-[#383D35]/60">
+          <span>Email: <strong className="text-[#252821] dark:text-[#ECEDE6]">{userProfile.email || '—'}</strong></span>
+          <span>Workspace: <strong className="text-[#252821] dark:text-[#ECEDE6]">{userProfile.workspaceName}</strong></span>
+          <span>Status: <strong className="text-[#477653] dark:text-[#91B594]">{userProfile.accountType}</strong></span>
+        </div>
       </div>
 
       {/* Appearance & Theme Card */}
