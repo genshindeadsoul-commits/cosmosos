@@ -123,16 +123,21 @@ interface AppContextType {
   
   // Goals & Habits
   addGoal: (g: Omit<Goal, 'id'>) => void;
+  updateGoal: (id: string, updates: Partial<Goal>) => void;
   incrementGoal: (id: string, delta?: number) => void;
   deleteGoal: (id: string) => void;
   toggleHabitCheckin: (habitId: string, date: string) => void;
   addHabit: (h: Omit<Habit, 'id' | 'streak' | 'checkins'>) => void;
+  updateHabit: (id: string, updates: Partial<Habit>) => void;
+  deleteHabit: (id: string) => void;
   
   // Trackers
   selectedTrackerId: string;
   setSelectedTrackerId: (id: string) => void;
   addTrackerEntry: (trackerId: string, value: number, date?: string, notes?: string) => void;
+  deleteTrackerEntry: (trackerId: string, entryId: string) => void;
   addCustomTracker: (tracker: Omit<CustomTracker, 'id' | 'entries'>) => void;
+  updateCustomTracker: (id: string, updates: Partial<CustomTracker>) => void;
   deleteCustomTracker: (id: string) => void;
   
   // Integrations & Diagnostics
@@ -1317,6 +1322,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Goal deleted', 'info');
   };
 
+  const updateGoal = (id: string, updates: Partial<Goal>) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        goals: prev.goals.map((g) => (g.id === id ? { ...g, ...updates } : g)),
+      };
+    });
+    showToast('Goal updated', 'success');
+  };
+
   const toggleHabitCheckin = (habitId: string, date: string) => {
     setData((prev) => {
       if (!prev) return null;
@@ -1350,6 +1366,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Habit "${h.name}" added`, 'success');
   };
 
+  const updateHabit = (id: string, updates: Partial<Habit>) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        habits: prev.habits.map((h) => (h.id === id ? { ...h, ...updates } : h)),
+      };
+    });
+    showToast('Habit updated', 'success');
+  };
+
+  const deleteHabit = (id: string) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        habits: prev.habits.filter((h) => h.id !== id),
+      };
+    });
+    showToast('Habit removed', 'info');
+  };
+
   // Tracker Handlers
   const addTrackerEntry = (trackerId: string, value: number, date?: string, notes?: string) => {
     const entryDate = date || todayKey();
@@ -1377,6 +1415,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast(`Logged ${value} for tracker`, 'success');
   };
 
+  const deleteTrackerEntry = (trackerId: string, entryId: string) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        trackers: prev.trackers.map((t) => {
+          if (t.id === trackerId) {
+            return {
+              ...t,
+              entries: t.entries.filter((e) => e.id !== entryId),
+            };
+          }
+          return t;
+        }),
+      };
+    });
+    showToast('Entry deleted', 'info');
+  };
+
   const addCustomTracker = (tracker: Omit<CustomTracker, 'id' | 'entries'>) => {
     const newTrk: CustomTracker = {
       ...tracker,
@@ -1386,6 +1443,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setData((prev) => (prev ? { ...prev, trackers: [...prev.trackers, newTrk] } : null));
     setSelectedTrackerId(newTrk.id);
     showToast(`Tracker "${tracker.name}" created`, 'success');
+  };
+
+  const updateCustomTracker = (id: string, updates: Partial<CustomTracker>) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        trackers: prev.trackers.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+      };
+    });
+    showToast('Tracker updated', 'success');
   };
 
   const deleteCustomTracker = (id: string) => {
@@ -1523,14 +1591,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addWorkout,
         deleteWorkout,
         addGoal,
+        updateGoal,
         incrementGoal,
         deleteGoal,
         toggleHabitCheckin,
         addHabit,
+        updateHabit,
+        deleteHabit,
         selectedTrackerId,
         setSelectedTrackerId,
         addTrackerEntry,
+        deleteTrackerEntry,
         addCustomTracker,
+        updateCustomTracker,
         deleteCustomTracker,
         importCalendarEvents,
         refreshImportedWorkouts,

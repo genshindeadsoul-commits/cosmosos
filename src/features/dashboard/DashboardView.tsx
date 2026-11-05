@@ -792,6 +792,7 @@ export const DashboardView: React.FC = () => {
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={toggleFocusTimer}
+                      aria-label={isFocusRunning ? 'Pause focus timer' : 'Start focus timer'}
                       className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3D5240] hover:bg-[#2E3F31] dark:bg-[#526B55] text-white shadow-xs"
                     >
                       {isFocusRunning ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
@@ -849,6 +850,7 @@ export const DashboardView: React.FC = () => {
                   <div className="flex items-center justify-center gap-2">
                     <button
                       onClick={toggleFocusTimer}
+                      aria-label={isFocusRunning ? 'Pause focus timer' : 'Start focus timer'}
                       className="flex items-center gap-2 rounded-lg bg-[#3D5240] hover:bg-[#2E3F31] dark:bg-[#526B55] px-5 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
                     >
                       {isFocusRunning ? (

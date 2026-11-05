@@ -24,6 +24,18 @@ interface SearchResultItem {
   recordId?: string;
 }
 
+type SearchCategory = 'all' | 'tasks' | 'notes' | 'tables' | 'expenses' | 'fitness' | 'goals';
+
+const CATEGORIES: { id: SearchCategory; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'tables', label: 'Tables' },
+  { id: 'expenses', label: 'Expenses' },
+  { id: 'fitness', label: 'Fitness' },
+  { id: 'goals', label: 'Goals & Habits' },
+];
+
 export const GlobalSearchModal: React.FC = () => {
   const {
     isSearchOpen,
@@ -45,17 +57,21 @@ export const GlobalSearchModal: React.FC = () => {
   } = useApp();
 
   const [query, setQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<SearchCategory>('all');
+  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isSearchOpen) {
       setTimeout(() => inputRef.current?.focus(), 50);
+      setActiveIndex(0);
     } else {
       setQuery('');
+      setSelectedCategory('all');
     }
   }, [isSearchOpen]);
 
-  const results = useMemo(() => {
+  const allResults = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
 
@@ -80,9 +96,13 @@ export const GlobalSearchModal: React.FC = () => {
     events.forEach((ev) => {
       if (ev.title.toLowerCase().includes(q) || ev.description?.toLowerCase().includes(q) || ev.location?.toLowerCase().includes(q)) {
         items.push({
-          id: `event-${ev.id}`, module: 'tasks', title: ev.title,
+          id: `event-${ev.id}`,
+          module: 'tasks',
+          title: ev.title,
           subtitle: `${ev.date}${ev.startTime ? ` · ${ev.startTime}` : ''}${ev.location ? ` · ${ev.location}` : ''}`,
-          badge: 'Event', icon: CheckSquare, recordId: ev.id,
+          badge: 'Event',
+          icon: CheckSquare,
+          recordId: ev.id,
         });
       }
     });
@@ -94,7 +114,7 @@ export const GlobalSearchModal: React.FC = () => {
           id: `note-${n.id}`,
           module: 'notes',
           title: n.title,
-          subtitle: n.excerpt.slice(0, 80) + '...',
+          subtitle: (n.excerpt || '').slice(0, 80) + '...',
           badge: 'Note',
           icon: FileText,
           recordId: n.id,
@@ -156,7 +176,7 @@ export const GlobalSearchModal: React.FC = () => {
           id: `w-${w.id}`,
           module: 'fitness',
           title: w.title,
-          subtitle: `${w.date} · ${w.durationMinutes} mins · ${w.calories} kcal`,
+          subtitle: `${w.date} · ${w.durationMinutes || 0} mins · ${w.calories || 0} kcal`,
           badge: 'Workout',
           icon: Dumbbell,
         });
@@ -206,8 +226,19 @@ export const GlobalSearchModal: React.FC = () => {
       }
     });
 
-    return items.slice(0, 20);
+    return items;
   }, [query, tasks, events, notes, tables, transactions, workouts, goals, habits, trackers]);
+
+  const results = useMemo(() => {
+    if (selectedCategory === 'all') {
+      return allResults.slice(0, 25);
+    }
+    return allResults.filter((item) => item.module === selectedCategory).slice(0, 25);
+  }, [allResults, selectedCategory]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query, selectedCategory]);
 
   if (!isSearchOpen) return null;
 
@@ -225,12 +256,30 @@ export const GlobalSearchModal: React.FC = () => {
     setSearchOpen(false);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setSearchOpen(false);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((prev) => (results.length > 0 ? (prev + 1) % results.length : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((prev) => (results.length > 0 ? (prev - 1 + results.length) % results.length : 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (results[activeIndex]) {
+        handleSelectResult(results[activeIndex]);
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:pt-20 bg-black/50 backdrop-blur-xs">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search Cosmos OS"
+        onKeyDown={handleKeyDown}
         className="relative w-full max-w-xl rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] shadow-2xl overflow-hidden"
       >
         {/* Search Input Bar */}
@@ -242,9 +291,7 @@ export const GlobalSearchModal: React.FC = () => {
             placeholder="Search tasks, notes, tables, expenses, fitness, goals..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setSearchOpen(false);
-            }}
+            onKeyDown={handleKeyDown}
             className="w-full bg-transparent text-sm text-[#252821] dark:text-[#ECEDE6] placeholder-[#8A8E85] focus:outline-none"
           />
           {query && (
@@ -263,6 +310,29 @@ export const GlobalSearchModal: React.FC = () => {
           </button>
         </div>
 
+        {/* Category Filter Pills */}
+        <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/60 dark:bg-[#181A17]/60 overflow-x-auto">
+          {CATEGORIES.map((cat) => {
+            const isSelected = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => {
+                  setSelectedCategory(cat.id);
+                  inputRef.current?.focus();
+                }}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors shrink-0 ${
+                  isSelected
+                    ? 'bg-[#3D5240] text-white dark:bg-[#526B55]'
+                    : 'bg-white dark:bg-[#20231F] text-[#6B7067] dark:text-[#A6AB9F] border border-[#DFE1D9] dark:border-[#383D35] hover:bg-[#F0F1EB]'
+                }`}
+              >
+                {cat.label}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Results List */}
         <div className="max-h-96 overflow-y-auto p-2">
           {query.trim() === '' ? (
@@ -275,13 +345,19 @@ export const GlobalSearchModal: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-1">
-              {results.map((item) => {
+              {results.map((item, index) => {
                 const Icon = item.icon;
+                const isSelected = index === activeIndex;
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleSelectResult(item)}
-                    className="flex w-full items-center justify-between rounded-lg p-2.5 text-left hover:bg-[#F0F1EB] dark:hover:bg-[#292D27] transition-colors group"
+                    onMouseEnter={() => setActiveIndex(index)}
+                    className={`flex w-full items-center justify-between rounded-lg p-2.5 text-left transition-colors group ${
+                      isSelected
+                        ? 'bg-[#E8EEE6] dark:bg-[#293327]'
+                        : 'hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]'
+                    }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-[#ECEDE7] dark:bg-[#30352D] text-[#526B55] dark:text-[#A8BDA1]">
@@ -301,7 +377,7 @@ export const GlobalSearchModal: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-[#8A8E85] opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0" />
+                    <ArrowRight className={`h-4 w-4 text-[#8A8E85] shrink-0 ml-2 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} />
                   </button>
                 );
               })}
@@ -311,7 +387,7 @@ export const GlobalSearchModal: React.FC = () => {
 
         {/* Footer shortcuts */}
         <div className="border-t border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/50 dark:bg-[#181A17]/50 px-4 py-2 text-[11px] text-[#8A8E85] flex justify-between">
-          <span>Navigate with mouse or touch</span>
+          <span>↑ ↓ to navigate · Enter to select · ESC to close</span>
           <span>{results.length} results</span>
         </div>
       </div>

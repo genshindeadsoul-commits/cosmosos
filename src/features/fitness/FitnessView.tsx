@@ -8,10 +8,50 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
+  Search,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { dayKey, daysInMonth, leadingBlanks, monthLabel, todayKey } from '../../lib/dates';
 import { DayDetailsModal } from '../../components/calendar/DayDetailsModal';
+
+const WORKOUT_TEMPLATES = [
+  {
+    title: 'Push Day (Chest & Shoulders)',
+    duration: 50,
+    calories: 320,
+    exercises: [
+      { name: 'Barbell Bench Press', setsReps: '4x8', weightLbs: 135 },
+      { name: 'Incline Dumbbell Press', setsReps: '3x10', weightLbs: 50 },
+      { name: 'Overhead Shoulder Press', setsReps: '3x10', weightLbs: 40 },
+    ],
+  },
+  {
+    title: 'Pull Day (Back & Biceps)',
+    duration: 50,
+    calories: 310,
+    exercises: [
+      { name: 'Deadlifts', setsReps: '3x5', weightLbs: 185 },
+      { name: 'Lat Pulldowns', setsReps: '4x10', weightLbs: 110 },
+      { name: 'Barbell Curls', setsReps: '3x12', weightLbs: 45 },
+    ],
+  },
+  {
+    title: 'Leg Day (Quads & Glutes)',
+    duration: 55,
+    calories: 380,
+    exercises: [
+      { name: 'Barbell Squats', setsReps: '4x8', weightLbs: 185 },
+      { name: 'Romanian Deadlifts', setsReps: '3x10', weightLbs: 135 },
+      { name: 'Leg Press', setsReps: '3x12', weightLbs: 225 },
+    ],
+  },
+  {
+    title: '5K Pace Run',
+    duration: 28,
+    calories: 300,
+    exercises: [{ name: '5K Outdoor Run', setsReps: '1x5km', weightLbs: 0 }],
+  },
+];
 
 export const FitnessView: React.FC = () => {
   const { workouts, addWorkout, deleteWorkout } = useApp();
@@ -19,8 +59,12 @@ export const FitnessView: React.FC = () => {
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [isDayDetailsOpen, setIsDayDetailsOpen] = useState(false);
   const [modalDateKey, setModalDateKey] = useState<string>(() => todayKey());
-  const [view, setView] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
+  const [view, setView] = useState(() => {
+    const n = new Date();
+    return { y: n.getFullYear(), m: n.getMonth() };
+  });
   const [selectedCalendarDay, setSelectedCalendarDay] = useState(new Date().getDate());
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Form states
   const [title, setTitle] = useState('');
@@ -30,6 +74,13 @@ export const FitnessView: React.FC = () => {
   const [exerciseList, setExerciseList] = useState<{ name: string; setsReps: string; weightLbs?: number }[]>([
     { name: '', setsReps: '', weightLbs: 0 },
   ]);
+
+  const handleApplyTemplate = (tpl: typeof WORKOUT_TEMPLATES[0]) => {
+    setTitle(tpl.title);
+    setDuration(String(tpl.duration));
+    setCalories(String(tpl.calories));
+    setExerciseList(tpl.exercises.map((e) => ({ ...e })));
+  };
 
   const handleAddWorkout = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +95,9 @@ export const FitnessView: React.FC = () => {
     });
 
     setTitle('');
+    setDuration('');
+    setCalories('');
+    setExerciseList([{ name: '', setsReps: '', weightLbs: 0 }]);
     setIsLogModalOpen(false);
   };
 
@@ -53,6 +107,23 @@ export const FitnessView: React.FC = () => {
 
   // Workout dates map for calendar
   const workoutDays = new Set(workouts.map((w) => w.date));
+
+  // Monthly summary calculations
+  const currentMonthPrefix = `${view.y}-${String(view.m + 1).padStart(2, '0')}`;
+  const monthWorkouts = workouts.filter((w) => w.date.startsWith(currentMonthPrefix));
+  const monthDuration = monthWorkouts.reduce((sum, w) => sum + (w.durationMinutes || 0), 0);
+  const monthCalories = monthWorkouts.reduce((sum, w) => sum + (w.calories || 0), 0);
+
+  // Filtered workouts
+  const filteredWorkouts = workouts.filter((w) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      w.title.toLowerCase().includes(q) ||
+      w.exercises?.some((ex) => ex.name.toLowerCase().includes(q)) ||
+      (w.notes && w.notes.toLowerCase().includes(q))
+    );
+  });
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto pb-12">
@@ -75,7 +146,31 @@ export const FitnessView: React.FC = () => {
         </button>
       </div>
 
-      {/* Workout Calendar Card matching Screenshot 2 */}
+      {/* Monthly Summary Bar */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-3.5 shadow-xs">
+          <div className="text-[11px] font-semibold text-[#8A8E85]">
+            Workouts ({monthLabel(view.y, view.m)})
+          </div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-[#252821] dark:text-[#ECEDE6]">
+            {monthWorkouts.length}
+          </div>
+        </div>
+        <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-3.5 shadow-xs">
+          <div className="text-[11px] font-semibold text-[#8A8E85]">Active Time</div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-[#252821] dark:text-[#ECEDE6]">
+            {monthDuration} <span className="text-xs font-normal text-[#8A8E85]">mins</span>
+          </div>
+        </div>
+        <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-3.5 shadow-xs">
+          <div className="text-[11px] font-semibold text-[#8A8E85]">Energy Burned</div>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-[#252821] dark:text-[#ECEDE6]">
+            {monthCalories} <span className="text-xs font-normal text-[#8A8E85]">kcal</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Workout Calendar Card */}
       <div className="rounded-2xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-5 sm:p-6 shadow-xs space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -118,7 +213,7 @@ export const FitnessView: React.FC = () => {
           <span>Sat</span>
         </div>
 
-        {/* Calendar Grid matching Screenshot 2 */}
+        {/* Calendar Grid */}
         <div className="grid grid-cols-7 gap-2 text-center text-xs">
           {Array.from({ length: leadingBlanks(view.y, view.m, 0) }, (_, i) => (
             <div key={`b${i}`} className="h-14 sm:h-16 rounded-xl border border-dashed border-[#DFE1D9]/40 dark:border-[#383D35]/40" />
@@ -176,36 +271,54 @@ export const FitnessView: React.FC = () => {
         </div>
       </div>
 
-      {/* RECENT LOGS Section matching Screenshot 2 */}
+      {/* RECENT LOGS Section */}
       <div className="rounded-2xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-5 sm:p-6 shadow-xs space-y-4">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-[#6B7067] dark:text-[#A6AB9F]">
-          Recent Logs
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-[#6B7067] dark:text-[#A6AB9F]">
+            Recent Logs ({filteredWorkouts.length})
+          </h2>
+          {workouts.length > 0 && (
+            <div className="relative w-full sm:w-64">
+              <input
+                type="text"
+                placeholder="Search workouts or exercises..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] pl-8 pr-3 py-1.5 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
+              />
+              <Search className="h-3.5 w-3.5 text-[#8A8E85] absolute left-2.5 top-1/2 -translate-y-1/2" />
+            </div>
+          )}
+        </div>
 
-        {workouts.length === 0 ? (
+        {filteredWorkouts.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[#DFE1D9] dark:border-[#383D35] p-8 text-center space-y-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8EEE6] dark:bg-[#303B2E] text-[#3D5240] dark:text-[#A8BDA1] mx-auto">
               <Dumbbell className="h-6 w-6" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-[#252821] dark:text-[#ECEDE6]">
-                No workouts recorded yet
+                {searchQuery ? 'No matching workouts found' : 'No workouts recorded yet'}
               </h3>
               <p className="text-xs text-[#6B7067] dark:text-[#A6AB9F] max-w-sm mx-auto pt-1">
-                Log your strength sessions, cardio workouts, or sync automatically with Health Connect.
+                {searchQuery
+                  ? 'Try searching with a different session title or exercise name.'
+                  : 'Log your strength sessions, cardio workouts, or sync automatically with Health Connect.'}
               </p>
             </div>
-            <button
-              onClick={() => setIsLogModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#3D5240] hover:bg-[#2E3F31] dark:bg-[#526B55] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Log First Workout</span>
-            </button>
+            {!searchQuery && (
+              <button
+                onClick={() => setIsLogModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#3D5240] hover:bg-[#2E3F31] dark:bg-[#526B55] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Log First Workout</span>
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
-            {workouts.map((w) => (
+            {filteredWorkouts.map((w) => (
               <div
                 key={w.id}
                 className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/40 dark:bg-[#181A17]/40 p-4 space-y-2.5 transition-colors group"
@@ -292,6 +405,25 @@ export const FitnessView: React.FC = () => {
               >
                 Cancel
               </button>
+            </div>
+
+            {/* Quick Templates */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-semibold text-[#8A8E85]">
+                Quick session templates:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {WORKOUT_TEMPLATES.map((tpl) => (
+                  <button
+                    key={tpl.title}
+                    type="button"
+                    onClick={() => handleApplyTemplate(tpl)}
+                    className="rounded border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-2 py-1 text-[11px] font-medium text-[#252821] dark:text-[#ECEDE6] hover:border-[#526B55]"
+                  >
+                    {tpl.title.split(' ')[0]} {tpl.title.split(' ')[1]}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <form onSubmit={handleAddWorkout} className="space-y-3">

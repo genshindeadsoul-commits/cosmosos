@@ -276,6 +276,8 @@ export interface Goal {
   unit: string;
   targetDate: string;
   completed: boolean;
+  description?: string;
+  notes?: string;
 }
 
 export interface Habit {
@@ -284,6 +286,7 @@ export interface Habit {
   category: string;
   streak: number;
   checkins: Record<string, boolean>; // date -> completed
+  archived?: boolean;
 }
 
 export interface CustomTrackerEntry {

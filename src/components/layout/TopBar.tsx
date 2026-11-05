@@ -4,6 +4,10 @@ import {
   Search,
   Music2,
   Plus,
+  Clock,
+  Play,
+  Pause,
+  RotateCcw,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { usePrefs } from '../../context/PrefsContext';
@@ -20,6 +24,12 @@ const MODULE_TITLES: Record<ModuleType, string> = {
   tasks: 'Tasks & Calendar',
   settings: 'Settings',
   mail: 'Mail',
+};
+
+const formatTimerTime = (seconds: number) => {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
 export const TopBar: React.FC = () => {
@@ -39,6 +49,11 @@ export const TopBar: React.FC = () => {
     musicHub,
     userProfile,
     setProfileOpen,
+    isFocusRunning,
+    focusSecondsLeft,
+    focusDurationMins,
+    toggleFocusTimer,
+    resetFocusTimer,
   } = useApp();
   const { prefs, update } = usePrefs();
 
@@ -81,6 +96,39 @@ export const TopBar: React.FC = () => {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Floating Mini Focus Timer Indicator (visible across all views when active) */}
+        {(isFocusRunning || focusSecondsLeft < focusDurationMins * 60) && (
+          <div
+            role="region"
+            aria-label="Active focus timer"
+            className="flex items-center gap-1.5 rounded-full border border-[#526B55]/30 bg-[#E8EEE6] dark:bg-[#20291F] px-2.5 py-1 text-xs font-mono text-[#2E3F31] dark:text-[#A8BDA1] shadow-xs"
+          >
+            <button
+              onClick={() => setActiveModule('dashboard')}
+              title="View Focus Session on Dashboard"
+              aria-label="View Focus Session on Dashboard"
+              className="flex items-center gap-1 hover:underline font-bold"
+            >
+              <Clock className={`h-3.5 w-3.5 text-[#3D5240] dark:text-[#78A87D] ${isFocusRunning ? 'animate-pulse' : ''}`} />
+              <span>{formatTimerTime(focusSecondsLeft)}</span>
+            </button>
+            <button
+              onClick={toggleFocusTimer}
+              aria-label={isFocusRunning ? 'Pause focus timer' : 'Resume focus timer'}
+              className="rounded p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
+            >
+              {isFocusRunning ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+            </button>
+            <button
+              onClick={resetFocusTimer}
+              aria-label="Reset focus timer"
+              className="rounded p-0.5 hover:bg-black/10 dark:hover:bg-white/10 text-[#8A8E85]"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
         {/* Global Search Button */}
         <button
           onClick={() => setSearchOpen(true)}
