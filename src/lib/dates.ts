@@ -41,3 +41,26 @@ export const formatReadableDate = (key: string): string => {
   });
 };
 
+export const isDateInRange = (dateKey: string, startKey: string, endKey?: string): boolean => {
+  const end = endKey && endKey >= startKey ? endKey : startKey;
+  return startKey <= dateKey && dateKey <= end;
+};
+
+export function getWeekDaysForDate(anchorKey: string) {
+  const [y, m, d] = anchorKey.split('-').map(Number);
+  const anchor = new Date(Date.UTC(y, m - 1, d));
+  const dayOfWeek = anchor.getUTCDay(); // 0 = Sun, 1 = Mon
+  const mondayOffset = (dayOfWeek + 6) % 7;
+  return Array.from({ length: 7 }, (_, i) => {
+    const dt = new Date(Date.UTC(y, m - 1, d - mondayOffset + i));
+    const k = `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+    return {
+      dayLetter: ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i],
+      dayName: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
+      dateNum: String(dt.getUTCDate()),
+      dateKey: k,
+    };
+  });
+}
+
+

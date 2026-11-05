@@ -45,9 +45,12 @@ export interface CalendarEvent {
   id: string;
   title: string;
   description?: string;
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD (start date)
+  endDate?: string; // YYYY-MM-DD (end date for multi-day events)
   startTime: string;
   endTime: string;
+  allDay?: boolean;
+  color?: string;
   category: string;
   location?: string;
   source: 'local' | 'google_calendar';

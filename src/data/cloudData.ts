@@ -58,8 +58,10 @@ export function toRows(d: CosmosAppData): RowSet {
       linked_note_id: nz(t.linkedNoteId), recurrence: nz(t.recurrence), completed_at: nz(t.completedAt),
     })),
     calendar_events: d.events.map((e) => ({
-      id: e.id, title: e.title, description: nz(e.description), event_date: e.date, start_time: e.startTime ?? '',
-      end_time: e.endTime ?? '', category: e.category, location: nz(e.location), source: e.source, provider_id: nz(e.providerId),
+      id: e.id, title: e.title, description: nz(e.description), event_date: e.date,
+      end_date: nz(e.endDate), start_time: e.startTime ?? '', end_time: e.endTime ?? '',
+      all_day: !!e.allDay, color: nz(e.color),
+      category: e.category, location: nz(e.location), source: e.source, provider_id: nz(e.providerId),
     })),
     transactions: d.transactions.map((t) => ({
       id: t.id, type: t.type, category: t.category, title: nz(t.title), description: t.description ?? '', amount: Math.abs(t.amount),
@@ -139,7 +141,11 @@ export function fromRows(r: RowSet, today = new Date()): CosmosAppData {
     })),
     events: r.calendar_events.map((e) => ({
       id: s(e.id), title: s(e.title), description: (e.description as string) ?? undefined, date: date10(e.event_date),
-      startTime: s(e.start_time), endTime: s(e.end_time), category: s(e.category), location: (e.location as string) ?? undefined,
+      endDate: date10(e.end_date as string) ?? undefined,
+      startTime: s(e.start_time), endTime: s(e.end_time),
+      allDay: typeof e.all_day === 'boolean' ? e.all_day : (!s(e.start_time) && !s(e.end_time)),
+      color: (e.color as string) ?? undefined,
+      category: s(e.category), location: (e.location as string) ?? undefined,
       source: s(e.source) as CalendarEvent['source'], providerId: (e.provider_id as string) ?? undefined,
     })),
     transactions: r.transactions.map((t) => ({
@@ -260,6 +266,7 @@ const reasonFor = (f: SaveFailure): string => {
   const m = f.message;
   if (/column ["']?note_date["']? does not exist/i.test(m) || (f.table === 'notes' && /column.*does not exist/i.test(m))) return 'needs migration 0005';
   if (/column ["']?title["']? does not exist/i.test(m) || (f.table === 'transactions' && /column.*does not exist/i.test(m))) return 'needs migration 0006';
+  if (/column ["']?(end_date|all_day|color)["']? does not exist/i.test(m) || (f.table === 'calendar_events' && /column.*does not exist/i.test(m))) return 'needs migration 0007';
   if (/invalid input syntax for type uuid/i.test(m)) return 'an item had an invalid ID';
   if (f.code === '42501' || /row-level security|permission denied/i.test(m)) return 'your account isn’t allowed to save this';
   if (f.code === '23503' || /foreign key/i.test(m)) return 'it points at a record that no longer exists';

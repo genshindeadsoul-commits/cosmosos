@@ -73,6 +73,7 @@ interface AppContextType {
   
   // Events
   addEvent: (event: Omit<CalendarEvent, 'id'>) => void;
+  updateEvent: (event: CalendarEvent) => void;
   deleteEvent: (id: string) => void;
   
   // Notes
@@ -732,6 +733,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Event scheduled', 'success');
   };
 
+  const updateEvent = (updatedEvent: CalendarEvent) => {
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            events: prev.events.map((e) => (e.id === updatedEvent.id ? updatedEvent : e)),
+          }
+        : null
+    );
+    showToast('Event updated', 'success');
+  };
+
   const deleteEvent = (id: string) => {
     setData((prev) =>
       prev
@@ -1174,6 +1187,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteTask,
         toggleTaskStatus,
         addEvent,
+        updateEvent,
         deleteEvent,
         selectedNoteId,
         setSelectedNoteId,

@@ -43,10 +43,12 @@ import {
   todayKey,
   currentMonthKey,
   formatReadableDate,
+  isDateInRange,
 } from '../../lib/dates';
 import { TaskListType, TASK_LISTS } from '../../types';
 import { DayDetailsModal } from '../../components/calendar/DayDetailsModal';
 import { Modal } from '../../components/common/Modal';
+import { CalendarDateCell, MultiDaySpan } from '../../components/calendar/CalendarDateCell';
 
 const ALL_WIDGETS: { id: DashboardWidgetId; label: string; desc: string }[] = [
   { id: 'agenda', label: "Today's Agenda", desc: 'Upcoming commitments & scheduled events' },
@@ -614,13 +616,30 @@ export const DashboardView: React.FC = () => {
                 {Array.from({ length: leadingBlanks(view.y, view.m, 1) }, (_, i) => {
                   const prev = shiftMonth(view.y, view.m, -1);
                   const n = daysInMonth(prev.y, prev.m) - leadingBlanks(view.y, view.m, 1) + i + 1;
+                  const k = dayKey(prev.y, prev.m, n);
                   return (
-                    <span
+                    <CalendarDateCell
                       key={`p${i}`}
-                      className="flex items-center justify-center p-1 sm:p-1.5 text-xs text-[#C9CDC2] dark:text-[#4A5046] min-w-0 w-full aspect-square"
-                    >
-                      {n}
-                    </span>
+                      dateKey={k}
+                      dayNum={n}
+                      isToday={k === todayStr}
+                      isSelected={k === selectedDayKey}
+                      hasItems={busyDays.has(k)}
+                      isCurrentMonth={false}
+                      dayOfWeekIndex={i}
+                      onSelectDate={(key) => {
+                        const [, , day] = key.split('-').map(Number);
+                        setSelectedCalendarDay(day);
+                        setModalDateKey(key);
+                      }}
+                      onOpenDetails={(key) => {
+                        const [, , day] = key.split('-').map(Number);
+                        setSelectedCalendarDay(day);
+                        setModalDateKey(key);
+                        setIsDayDetailsOpen(true);
+                      }}
+                      compact
+                    />
                   );
                 })}
                 {Array.from({ length: daysInMonth(view.y, view.m) }, (_, i) => i + 1).map((day) => {
@@ -628,34 +647,46 @@ export const DashboardView: React.FC = () => {
                   const isSelected = day === selectedCalendarDay;
                   const isToday = key === todayStr;
                   const hasDot = busyDays.has(key);
+                  const dayOfWeekIndex = (leadingBlanks(view.y, view.m, 1) + day - 1) % 7;
+
+                  const multiDaySpans: MultiDaySpan[] = events
+                    .filter((e) => {
+                      const start = e.date;
+                      const end = e.endDate && e.endDate >= e.date ? e.endDate : e.date;
+                      return isDateInRange(key, start, end) && e.endDate && e.endDate !== e.date;
+                    })
+                    .map((e) => ({
+                      id: e.id,
+                      title: e.title,
+                      color: e.color || '#3D5240',
+                      isStart: e.date === key,
+                      isEnd: e.endDate === key,
+                      isMiddle: e.date < key && key < e.endDate!,
+                      allDay: e.allDay,
+                    }));
+
                   return (
-                    <button
+                    <CalendarDateCell
                       key={day}
-                      onClick={() => {
+                      dateKey={key}
+                      dayNum={day}
+                      isToday={isToday}
+                      isSelected={isSelected}
+                      hasItems={hasDot}
+                      isCurrentMonth={true}
+                      dayOfWeekIndex={dayOfWeekIndex}
+                      multiDaySpans={multiDaySpans}
+                      onSelectDate={(k) => {
                         setSelectedCalendarDay(day);
-                        setModalDateKey(key);
-                        setModalInitialTab('overview');
+                        setModalDateKey(k);
+                      }}
+                      onOpenDetails={(k) => {
+                        setSelectedCalendarDay(day);
+                        setModalDateKey(k);
                         setIsDayDetailsOpen(true);
                       }}
-                      aria-label={`${key}${hasDot ? ', has items' : ''}`}
-                      aria-current={isToday ? 'date' : undefined}
-                      className={`relative flex flex-col items-center justify-center p-1 sm:p-1.5 rounded-lg text-xs font-semibold transition-colors min-w-0 w-full aspect-square ${
-                        isSelected
-                          ? 'bg-[#3D5240] dark:bg-[#526B55] text-white shadow-xs'
-                          : isToday
-                          ? 'ring-1 ring-[#252821] dark:ring-[#ECEDE6] text-[#252821] dark:text-[#ECEDE6]'
-                          : 'text-[#252821] dark:text-[#ECEDE6] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]'
-                      }`}
-                    >
-                      <span>{day}</span>
-                      {hasDot && (
-                        <span
-                          className={`h-1 w-1 rounded-full ${
-                            isSelected ? 'bg-white' : 'bg-[#526B55] dark:bg-[#A8BDA1]'
-                          }`}
-                        />
-                      )}
-                    </button>
+                      compact
+                    />
                   );
                 })}
               </div>

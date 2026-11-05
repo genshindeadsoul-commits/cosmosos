@@ -170,7 +170,12 @@ export function parseBackup(json: string): ParseResult {
     if (n.noteDate && !real(n.noteDate)) n.noteDate = undefined;
   });
   data.tasks.forEach((t) => { t.id = fix(t.id); if (t.linkedNoteId) t.linkedNoteId = fix(t.linkedNoteId); });
-  data.events.forEach((e) => { e.id = fix(e.id); e.source = e.source === 'google_calendar' ? 'google_calendar' : 'local'; });
+  data.events.forEach((e) => {
+    e.id = fix(e.id);
+    e.source = e.source === 'google_calendar' ? 'google_calendar' : 'local';
+    if (e.endDate && !real(e.endDate)) e.endDate = undefined;
+    if (e.endDate && e.endDate < e.date) e.endDate = e.date;
+  });
   data.transactions.forEach((t) => { t.id = fix(t.id); });
   data.subscriptions.forEach((s) => { s.id = fix(s.id); });
   data.workouts.forEach((w) => { w.id = fix(w.id); w.exercises = Array.isArray(w.exercises) ? w.exercises : []; });
