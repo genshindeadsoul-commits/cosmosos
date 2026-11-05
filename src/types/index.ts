@@ -10,11 +10,20 @@ export type ModuleType =
   | 'settings'
   | 'mail';
 
-export type TaskListType = 'Inbox' | 'Work' | 'Study' | 'Health' | 'Personal' | 'Holiday trip';
+export type DefaultTaskListType = 'Inbox' | 'Work' | 'Study' | 'Health' | 'Personal' | 'Holiday trip';
+export type TaskListType = DefaultTaskListType | (string & {});
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 export type TaskStatus = 'todo' | 'completed' | 'in_progress';
 
-export const TASK_LIST_METADATA: Record<TaskListType, { label: string; dotColor: string }> = {
+export interface CustomTaskListMeta {
+  id: string;
+  name: string;
+  color?: string; // e.g. '#3B82F6' or tailwind class
+  icon?: string;
+  archived?: boolean;
+}
+
+export const TASK_LIST_METADATA: Record<DefaultTaskListType, { label: string; dotColor: string }> = {
   Inbox: { label: 'Inbox', dotColor: 'bg-purple-500' },
   Work: { label: 'Work', dotColor: 'bg-blue-500' },
   Study: { label: 'Study', dotColor: 'bg-amber-500' },
@@ -22,7 +31,7 @@ export const TASK_LIST_METADATA: Record<TaskListType, { label: string; dotColor:
   Personal: { label: 'Personal', dotColor: 'bg-emerald-500' },
   'Holiday trip': { label: 'Holiday trip', dotColor: 'bg-pink-500' },
 };
-export const TASK_LISTS: TaskListType[] = ['Inbox', 'Work', 'Study', 'Health', 'Personal', 'Holiday trip'];
+export const TASK_LISTS: DefaultTaskListType[] = ['Inbox', 'Work', 'Study', 'Health', 'Personal', 'Holiday trip'];
 export const TASK_PRIORITIES: TaskPriority[] = ['LOW', 'MEDIUM', 'HIGH'];
 
 export interface Task {
@@ -37,6 +46,7 @@ export interface Task {
   isFocus?: boolean;
   linkedNoteId?: string;
   recurrence?: 'daily' | 'weekly' | 'monthly';
+  reminder?: string;
   createdAt: string;
   completedAt?: string;
 }

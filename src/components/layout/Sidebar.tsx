@@ -16,8 +16,9 @@ import {
   Mail,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { usePrefs } from '../../context/PrefsContext';
 import { useIntegrations } from '../../context/IntegrationsContext';
-import { ModuleType, TASK_LISTS, TASK_LIST_METADATA } from '../../types';
+import { ModuleType, TASK_LISTS, TASK_LIST_METADATA, DefaultTaskListType } from '../../types';
 
 interface NavItem {
   id: ModuleType;
@@ -80,12 +81,19 @@ export const Sidebar: React.FC = () => {
     userProfile,
   } = useApp();
   const { isConnected } = useIntegrations();
+  const { prefs, setSelectedTaskList, setActiveTaskWorkspaceView } = usePrefs();
 
   const handleNavClick = (mod: ModuleType) => {
     setActiveModule(mod);
     if (window.innerWidth < 768) {
       setSidebarOpen(false);
     }
+  };
+
+  const handleTaskListClick = (listName: string) => {
+    setSelectedTaskList(listName);
+    setActiveTaskWorkspaceView('lists');
+    handleNavClick('tasks');
   };
 
   const handleTableClick = (tableId: string) => {
@@ -206,12 +214,31 @@ export const Sidebar: React.FC = () => {
                 return (
                   <button
                     key={listName}
-                    onClick={() => handleNavClick('tasks')}
+                    onClick={() => handleTaskListClick(listName)}
                     className="flex w-full items-center justify-between rounded-lg px-2.5 py-1 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
                   >
                     <div className="flex items-center gap-2">
                       <span className={`h-2 w-2 rounded-full ${meta.dotColor}`} />
                       <span>{meta.label}</span>
+                    </div>
+                    <span className="text-[11px] text-[#8A8E85] font-mono">{count}</span>
+                  </button>
+                );
+              })}
+              {prefs.customTaskLists?.filter((l) => !l.archived).map((customList) => {
+                const count = tasks.filter((t) => t.list === customList.name && t.status !== 'completed').length;
+                return (
+                  <button
+                    key={customList.id}
+                    onClick={() => handleTaskListClick(customList.name)}
+                    className="flex w-full items-center justify-between rounded-lg px-2.5 py-1 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: customList.color || '#3B82F6' }}
+                      />
+                      <span>{customList.name}</span>
                     </div>
                     <span className="text-[11px] text-[#8A8E85] font-mono">{count}</span>
                   </button>

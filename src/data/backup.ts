@@ -1,6 +1,7 @@
 import { CosmosAppData, EMPTY_DATA, isUuid, newId } from './cloudData';
 import { parseMusicLink } from '../lib/musicLinks';
 import type { PlaylistItem } from '../lib/playlists';
+import type { CustomTaskListMeta } from '../types';
 
 /** v1/v2: flat lists (older exports). v3: wrapped envelope with settings and integrity counts. */
 export const BACKUP_VERSION = 3;
@@ -22,6 +23,9 @@ export interface BackupSettings {
   };
   preferredCalendarTab?: 'overview' | 'tasks' | 'notes' | 'workout' | 'expenses';
   lastSelectedDate?: string;
+  customTaskLists?: CustomTaskListMeta[];
+  activeTaskWorkspaceView?: 'calendar' | 'today' | 'upcoming' | 'all' | 'lists';
+  selectedTaskList?: string;
 }
 
 const SECRETISH = /token|secret|password|passwd|credential|api[_-]?key|authorization|cookie|refresh/i;
@@ -119,6 +123,20 @@ export function sanitizeSettings(raw: any): BackupSettings {
   }
   if (typeof raw.lastSelectedDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(raw.lastSelectedDate)) {
     out.lastSelectedDate = raw.lastSelectedDate;
+  }
+  if (Array.isArray(raw.customTaskLists)) {
+    out.customTaskLists = raw.customTaskLists.slice(0, 50).filter((l: any) => l && typeof l.name === 'string' && l.name.trim().length > 0).map((l: any) => ({
+      id: typeof l.id === 'string' ? l.id : `list-${Date.now()}`,
+      name: String(l.name).trim().slice(0, 60),
+      color: typeof l.color === 'string' ? l.color : '#3B82F6',
+      archived: !!l.archived,
+    }));
+  }
+  if (['calendar', 'today', 'upcoming', 'all', 'lists'].includes(raw.activeTaskWorkspaceView)) {
+    out.activeTaskWorkspaceView = raw.activeTaskWorkspaceView;
+  }
+  if (typeof raw.selectedTaskList === 'string') {
+    out.selectedTaskList = raw.selectedTaskList.trim().slice(0, 60);
   }
   return out;
 }

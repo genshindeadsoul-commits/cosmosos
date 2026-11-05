@@ -70,6 +70,10 @@ interface AppContextType {
   updateTask: (task: Task) => void;
   deleteTask: (id: string) => void;
   toggleTaskStatus: (id: string) => void;
+  bulkUpdateTasks: (ids: string[], patch: Partial<Task>) => void;
+  bulkDeleteTasks: (ids: string[]) => void;
+  renameTaskList: (oldName: string, newName: string) => void;
+  deleteTaskList: (name: string, targetListForTasks?: string | null) => void;
   
   // Events
   addEvent: (event: Omit<CalendarEvent, 'id'>) => void;
@@ -701,6 +705,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
+  const bulkUpdateTasks = (ids: string[], patch: Partial<Task>) => {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            tasks: prev.tasks.map((t) => (idSet.has(t.id) ? { ...t, ...patch } : t)),
+          }
+        : null
+    );
+    showToast(`Updated ${ids.length} tasks`, 'success');
+  };
+
+  const bulkDeleteTasks = (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            tasks: prev.tasks.filter((t) => !idSet.has(t.id)),
+          }
+        : null
+    );
+    showToast(`Deleted ${ids.length} tasks`, 'info');
+  };
+
+  const renameTaskList = (oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || oldName === trimmed) return;
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            tasks: prev.tasks.map((t) => (t.list === oldName ? { ...t, list: trimmed } : t)),
+          }
+        : null
+    );
+    showToast(`Renamed list "${oldName}" to "${trimmed}"`, 'success');
+  };
+
+  const deleteTaskList = (name: string, targetListForTasks?: string | null) => {
+    setData((prev) => {
+      if (!prev) return null;
+      let tasks = prev.tasks;
+      if (targetListForTasks && targetListForTasks !== '__DELETE__') {
+        tasks = tasks.map((t) => (t.list === name ? { ...t, list: targetListForTasks } : t));
+      } else {
+        tasks = tasks.filter((t) => t.list !== name);
+      }
+      return { ...prev, tasks };
+    });
+    showToast(`Deleted list "${name}"`, 'info');
+  };
+
   // Calendar Event Handlers
   /** One-way import. Dedupes on (source, providerId); re-importing updates changed events instead of duplicating. */
   const mergeGoogleEvents = (cur: CalendarEvent[], incoming: ImportedEvent[]) => {
@@ -1186,6 +1246,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateTask,
         deleteTask,
         toggleTaskStatus,
+        bulkUpdateTasks,
+        bulkDeleteTasks,
+        renameTaskList,
+        deleteTaskList,
         addEvent,
         updateEvent,
         deleteEvent,

@@ -2,6 +2,9 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { requireSupabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 import type { PlaylistItem } from '../lib/playlists';
+import type { CustomTaskListMeta } from '../types';
+
+export type TaskWorkspaceView = 'calendar' | 'today' | 'upcoming' | 'all' | 'lists';
 
 export type DashboardGridMode = '1-col' | '2-col' | 'auto';
 export type DashboardWidgetId =
@@ -39,6 +42,9 @@ export interface Prefs {
   dashboardGrid?: DashboardGridPrefs;
   preferredCalendarTab?: CalendarTab;
   lastSelectedDate?: string;
+  customTaskLists?: CustomTaskListMeta[];
+  activeTaskWorkspaceView?: TaskWorkspaceView;
+  selectedTaskList?: string;
 }
 
 interface PrefsContextType {
@@ -49,6 +55,12 @@ interface PrefsContextType {
   setDashboardGrid: (grid: Partial<DashboardGridPrefs>) => void;
   setPreferredCalendarTab: (tab: CalendarTab) => void;
   setLastSelectedDate: (date: string) => void;
+  createCustomTaskList: (name: string, color?: string) => void;
+  renameCustomTaskList: (oldName: string, newName: string) => void;
+  updateCustomTaskList: (name: string, patch: Partial<CustomTaskListMeta>) => void;
+  deleteCustomTaskList: (name: string) => void;
+  setActiveTaskWorkspaceView: (view: TaskWorkspaceView) => void;
+  setSelectedTaskList: (listName: string) => void;
 }
 const Ctx = createContext<PrefsContextType | undefined>(undefined);
 
@@ -116,6 +128,60 @@ export const PrefsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     update({ lastSelectedDate: date });
   }, [update]);
 
+  const createCustomTaskList = useCallback((name: string, color?: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const currentLists = latest.current.customTaskLists ?? [];
+    if (currentLists.some((l) => l.name.toLowerCase() === trimmed.toLowerCase())) return;
+    const newList: CustomTaskListMeta = {
+      id: `list-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: trimmed,
+      color: color || '#3B82F6',
+      archived: false,
+    };
+    update({
+      customTaskLists: [...currentLists, newList],
+      selectedTaskList: trimmed,
+    });
+  }, [update]);
+
+  const renameCustomTaskList = useCallback((oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || oldName === trimmed) return;
+    const currentLists = latest.current.customTaskLists ?? [];
+    update({
+      customTaskLists: currentLists.map((l) =>
+        l.name === oldName ? { ...l, name: trimmed } : l
+      ),
+      selectedTaskList: latest.current.selectedTaskList === oldName ? trimmed : latest.current.selectedTaskList,
+    });
+  }, [update]);
+
+  const updateCustomTaskList = useCallback((name: string, patch: Partial<CustomTaskListMeta>) => {
+    const currentLists = latest.current.customTaskLists ?? [];
+    update({
+      customTaskLists: currentLists.map((l) =>
+        l.name === name ? { ...l, ...patch } : l
+      ),
+    });
+  }, [update]);
+
+  const deleteCustomTaskList = useCallback((name: string) => {
+    const currentLists = latest.current.customTaskLists ?? [];
+    update({
+      customTaskLists: currentLists.filter((l) => l.name !== name),
+      selectedTaskList: latest.current.selectedTaskList === name ? 'Inbox' : latest.current.selectedTaskList,
+    });
+  }, [update]);
+
+  const setActiveTaskWorkspaceView = useCallback((view: TaskWorkspaceView) => {
+    update({ activeTaskWorkspaceView: view });
+  }, [update]);
+
+  const setSelectedTaskList = useCallback((listName: string) => {
+    update({ selectedTaskList: listName });
+  }, [update]);
+
   useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); void save(); } }, [save]);   // flush on unmount
 
   return (
@@ -128,6 +194,12 @@ export const PrefsProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setDashboardGrid,
         setPreferredCalendarTab,
         setLastSelectedDate,
+        createCustomTaskList,
+        renameCustomTaskList,
+        updateCustomTaskList,
+        deleteCustomTaskList,
+        setActiveTaskWorkspaceView,
+        setSelectedTaskList,
       }}
     >
       {children}

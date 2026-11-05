@@ -5,6 +5,7 @@ import { render, screen, waitFor, cleanup, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import * as fake from './fakeSupabase';
 import { EMPTY_DATA as EMPTY, newId, toRows } from '../../src/data/cloudData';
+import { todayKey } from '../../src/lib/dates';
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: fake.fakeClient,
@@ -97,7 +98,7 @@ describe('Phase 2 Fixes — Finance Module', () => {
           title: 'Supermarket weekly groceries',
           description: '',
           amount: 2500,
-          tx_date: '2026-11-05',
+          tx_date: todayKey(),
           tx_time: '12:00 PM',
           notes: null,
         },
@@ -108,7 +109,7 @@ describe('Phase 2 Fixes — Finance Module', () => {
           title: 'Italian dinner date',
           description: '',
           amount: 1400,
-          tx_date: '2026-11-05',
+          tx_date: todayKey(),
           tx_time: '07:30 PM',
           notes: null,
         },
@@ -152,7 +153,7 @@ describe('Phase 2 Fixes — Notes Mobile Delete Accessibility', () => {
           excerpt: 'Secret roadmap details',
           starred: false,
           tags: ['Work'],
-          note_date: '2026-11-05',
+          note_date: todayKey(),
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
@@ -230,7 +231,7 @@ describe('Phase 2 Redesign — Dashboard & Global Navigation', () => {
         {
           id: '11111111-1111-4111-8111-111111111111',
           title: 'Executive Sync',
-          event_date: '2026-11-05',
+          event_date: todayKey(),
           start_time: '10:00 AM',
           end_time: '11:00 AM',
           category: 'Work',

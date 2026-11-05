@@ -8,6 +8,7 @@ import {
   Target,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { usePrefs } from '../../context/PrefsContext';
 import { todayKey } from '../../lib/dates';
 import { ExpenseCategory, TaskListType, TaskPriority, TASK_LISTS, TASK_PRIORITIES, EXPENSE_CATEGORIES } from '../../types';
 
@@ -24,13 +25,21 @@ export const QuickCaptureModal: React.FC = () => {
     addHabit,
     showToast,
   } = useApp();
+  const { prefs } = usePrefs();
 
   // Task form state
   const [taskTitle, setTaskTitle] = useState('');
+  const [taskDesc, setTaskDesc] = useState('');
   const [taskList, setTaskList] = useState<TaskListType>('Inbox');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('MEDIUM');
   const [taskDueDate, setTaskDueDate] = useState(todayKey());
   const [taskDueTime, setTaskDueTime] = useState('');
+  const [taskRecurrence, setTaskRecurrence] = useState<'' | 'daily' | 'weekly' | 'monthly'>('');
+
+  const availableLists: string[] = [
+    ...TASK_LISTS,
+    ...(prefs.customTaskLists?.filter((l) => !l.archived).map((l) => l.name) ?? []),
+  ];
 
   // Note form state
   const [noteTitle, setNoteTitle] = useState('');
@@ -62,13 +71,17 @@ export const QuickCaptureModal: React.FC = () => {
     }
     addTask({
       title: taskTitle.trim(),
+      description: taskDesc.trim() || undefined,
       list: taskList,
       priority: taskPriority,
       status: 'todo',
       dueDate: taskDueDate,
       dueTime: taskDueTime || undefined,
+      recurrence: taskRecurrence || undefined,
     });
     setTaskTitle('');
+    setTaskDesc('');
+    setTaskRecurrence('');
     setQuickCaptureOpen(false);
   };
 
@@ -257,7 +270,7 @@ export const QuickCaptureModal: React.FC = () => {
                     onChange={(e) => setTaskList(e.target.value as TaskListType)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    {TASK_LISTS.map((list) => (
+                    {availableLists.map((list) => (
                       <option key={list} value={list}>
                         {list}
                       </option>
