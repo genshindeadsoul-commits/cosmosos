@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { usePrefs, DEFAULT_DASHBOARD_GRID, CalendarTab } from '../../context/PrefsContext';
-import { dayKey, daysInMonth, leadingBlanks, monthLabel, shiftMonth, todayKey } from '../../lib/dates';
-import { TaskListType } from '../../types';
+import { dayKey, daysInMonth, leadingBlanks, monthLabel, shiftMonth, todayKey, currentMonthKey } from '../../lib/dates';
+import { TaskListType, TASK_LISTS } from '../../types';
 import { DayDetailsModal } from '../../components/calendar/DayDetailsModal';
 
 export const DashboardView: React.FC = () => {
@@ -100,15 +100,18 @@ export const DashboardView: React.FC = () => {
   const pendingTasks = tasks.filter((t) => t.status !== 'completed');
   const todayActiveTasks = pendingTasks;
 
-  // Outflow calculation from real transactions
+  // Outflow calculation from real transactions (strictly scoped to active month)
+  const activeMonth = currentMonthKey();
   const totalMonthlyOutflow = transactions
-    .filter((t) => t.type === 'expense')
+    .filter((t) => t.type === 'expense' && t.date.startsWith(activeMonth))
     .reduce((acc, curr) => acc + curr.amount, 0);
 
   const busyDays = new Set<string>([
     ...tasks.filter((t) => t.status !== 'completed' && t.dueDate).map((t) => t.dueDate),
     ...events.map((e) => e.date),
     ...notes.filter((n) => n.noteDate).map((n) => n.noteDate!),
+    ...workouts.map((w) => w.date),
+    ...transactions.map((t) => t.date),
   ]);
 
   const handleQuickAdd = (e?: React.FormEvent) => {
@@ -214,7 +217,7 @@ export const DashboardView: React.FC = () => {
 
             {/* List Pills */}
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              {(['Inbox', 'Work', 'Study', 'Health', 'Personal'] as TaskListType[]).map((lst) => (
+              {TASK_LISTS.map((lst) => (
                 <button
                   key={lst}
                   type="button"

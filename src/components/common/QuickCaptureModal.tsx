@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { todayKey } from '../../lib/dates';
-import { ExpenseCategory, TaskListType, TaskPriority } from '../../types';
+import { ExpenseCategory, TaskListType, TaskPriority, TASK_LISTS, TASK_PRIORITIES, EXPENSE_CATEGORIES } from '../../types';
 
 export const QuickCaptureModal: React.FC = () => {
   const {
@@ -30,7 +30,7 @@ export const QuickCaptureModal: React.FC = () => {
   const [taskList, setTaskList] = useState<TaskListType>('Inbox');
   const [taskPriority, setTaskPriority] = useState<TaskPriority>('MEDIUM');
   const [taskDueDate, setTaskDueDate] = useState(todayKey());
-  const [taskDueTime, setTaskDueTime] = useState('02:30 PM');
+  const [taskDueTime, setTaskDueTime] = useState('');
 
   // Note form state
   const [noteTitle, setNoteTitle] = useState('');
@@ -44,9 +44,9 @@ export const QuickCaptureModal: React.FC = () => {
 
   // Workout form state
   const [workoutTitle, setWorkoutTitle] = useState('');
-  const [workoutDuration, setWorkoutDuration] = useState('45');
-  const [workoutCalories, setWorkoutCalories] = useState('350');
-  const [workoutExercises, setWorkoutExercises] = useState('Bench Press: 3x8 @ 175lbs');
+  const [workoutDuration, setWorkoutDuration] = useState('');
+  const [workoutCalories, setWorkoutCalories] = useState('');
+  const [workoutExercises, setWorkoutExercises] = useState('');
 
   // Habit form state
   const [habitName, setHabitName] = useState('');
@@ -257,12 +257,11 @@ export const QuickCaptureModal: React.FC = () => {
                     onChange={(e) => setTaskList(e.target.value as TaskListType)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    <option value="Inbox">Inbox</option>
-                    <option value="Work">Work</option>
-                    <option value="Study">Study</option>
-                    <option value="Health">Health</option>
-                    <option value="Personal">Personal</option>
-                    <option value="Holiday trip">Holiday trip</option>
+                    {TASK_LISTS.map((list) => (
+                      <option key={list} value={list}>
+                        {list}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -275,9 +274,11 @@ export const QuickCaptureModal: React.FC = () => {
                     onChange={(e) => setTaskPriority(e.target.value as TaskPriority)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
+                    {TASK_PRIORITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p === 'LOW' ? 'Low' : p === 'MEDIUM' ? 'Medium' : 'High'}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -401,16 +402,11 @@ export const QuickCaptureModal: React.FC = () => {
                   onChange={(e) => setTxCategory(e.target.value as ExpenseCategory)}
                   className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                 >
-                  <option value="Groceries">Groceries</option>
-                  <option value="Dining">Dining</option>
-                  <option value="Transportation">Transportation</option>
-                  <option value="Utilities">Utilities</option>
-                  <option value="Savings">Savings</option>
-                  <option value="Entertainment">Entertainment</option>
-                  <option value="Salary">Salary</option>
-                  <option value="Freelance">Freelance</option>
-                  <option value="Affiliate">Affiliate</option>
-                  <option value="Miscellaneous">Miscellaneous</option>
+                  {EXPENSE_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
                 </select>
               </div>
 

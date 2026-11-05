@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { currentWeek, todayKey } from '../../lib/dates';
-import { GoalCategory } from '../../types';
+import { GoalCategory, GOAL_CATEGORIES } from '../../types';
 
 export const GoalsHabitsView: React.FC = () => {
   const {
@@ -357,10 +357,11 @@ export const GoalsHabitsView: React.FC = () => {
                     onChange={(e) => setGoalCat(e.target.value as GoalCategory)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    <option value="FINANCE">Finance</option>
-                    <option value="LEARNING">Learning</option>
-                    <option value="FITNESS">Fitness</option>
-                    <option value="PROJECTS">Projects</option>
+                    {GOAL_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat.charAt(0) + cat.slice(1).toLowerCase()}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

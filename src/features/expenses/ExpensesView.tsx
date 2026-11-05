@@ -17,7 +17,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { usePrefs } from '../../context/PrefsContext';
 import { addMonthsKey, todayKey } from '../../lib/dates';
-import { ExpenseCategory, Transaction, TransactionType } from '../../types';
+import { ExpenseCategory, Transaction, TransactionType, EXPENSE_CATEGORIES } from '../../types';
 
 export const ExpensesView: React.FC = () => {
   const {
@@ -481,16 +481,11 @@ export const ExpensesView: React.FC = () => {
               className="w-full sm:w-auto rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-1.5 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
             >
               <option value="all">All Categories</option>
-              <option value="Groceries">Groceries</option>
-              <option value="Dining">Dining</option>
-              <option value="Transportation">Transportation</option>
-              <option value="Utilities">Utilities</option>
-              <option value="Savings">Savings</option>
-              <option value="Entertainment">Entertainment</option>
-              <option value="Salary">Salary</option>
-              <option value="Freelance">Freelance</option>
-              <option value="Affiliate">Affiliate</option>
-              <option value="Miscellaneous">Miscellaneous</option>
+              {EXPENSE_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -894,16 +889,11 @@ export const ExpensesView: React.FC = () => {
                     onChange={(e) => setNewTxCat(e.target.value as ExpenseCategory)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    <option value="Groceries">Groceries</option>
-                    <option value="Dining">Dining</option>
-                    <option value="Transportation">Transportation</option>
-                    <option value="Utilities">Utilities</option>
-                    <option value="Savings">Savings</option>
-                    <option value="Entertainment">Entertainment</option>
-                    <option value="Salary">Salary</option>
-                    <option value="Freelance">Freelance</option>
-                    <option value="Affiliate">Affiliate</option>
-                    <option value="Miscellaneous">Miscellaneous</option>
+                    {EXPENSE_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1021,16 +1011,11 @@ export const ExpensesView: React.FC = () => {
                     onChange={(e) => setEditTxCat(e.target.value as ExpenseCategory)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    <option value="Groceries">Groceries</option>
-                    <option value="Dining">Dining</option>
-                    <option value="Transportation">Transportation</option>
-                    <option value="Utilities">Utilities</option>
-                    <option value="Savings">Savings</option>
-                    <option value="Entertainment">Entertainment</option>
-                    <option value="Salary">Salary</option>
-                    <option value="Freelance">Freelance</option>
-                    <option value="Affiliate">Affiliate</option>
-                    <option value="Miscellaneous">Miscellaneous</option>
+                    {EXPENSE_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

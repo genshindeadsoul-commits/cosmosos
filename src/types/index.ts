@@ -14,6 +14,17 @@ export type TaskListType = 'Inbox' | 'Work' | 'Study' | 'Health' | 'Personal' | 
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 export type TaskStatus = 'todo' | 'completed' | 'in_progress';
 
+export const TASK_LIST_METADATA: Record<TaskListType, { label: string; dotColor: string }> = {
+  Inbox: { label: 'Inbox', dotColor: 'bg-purple-500' },
+  Work: { label: 'Work', dotColor: 'bg-blue-500' },
+  Study: { label: 'Study', dotColor: 'bg-amber-500' },
+  Health: { label: 'Health', dotColor: 'bg-rose-500' },
+  Personal: { label: 'Personal', dotColor: 'bg-emerald-500' },
+  'Holiday trip': { label: 'Holiday trip', dotColor: 'bg-pink-500' },
+};
+export const TASK_LISTS: TaskListType[] = ['Inbox', 'Work', 'Study', 'Health', 'Personal', 'Holiday trip'];
+export const TASK_PRIORITIES: TaskPriority[] = ['LOW', 'MEDIUM', 'HIGH'];
+
 export interface Task {
   id: string;
   title: string;
@@ -89,6 +100,19 @@ export type ExpenseCategory =
   | 'Miscellaneous'
   | 'Affiliate';
 
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  'Salary',
+  'Groceries',
+  'Transportation',
+  'Dining',
+  'Freelance',
+  'Savings',
+  'Entertainment',
+  'Utilities',
+  'Miscellaneous',
+  'Affiliate',
+];
+
 export interface Transaction {
   id: string;
   type: TransactionType;
@@ -128,6 +152,7 @@ export interface WorkoutLog {
 }
 
 export type GoalCategory = 'FINANCE' | 'LEARNING' | 'FITNESS' | 'PROJECTS';
+export const GOAL_CATEGORIES: GoalCategory[] = ['FINANCE', 'LEARNING', 'FITNESS', 'PROJECTS'];
 
 export interface Goal {
   id: string;

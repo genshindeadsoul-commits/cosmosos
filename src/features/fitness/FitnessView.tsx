@@ -25,11 +25,10 @@ export const FitnessView: React.FC = () => {
   // Form states
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(todayKey());
-  const [duration, setDuration] = useState('50');
-  const [calories, setCalories] = useState('450');
-  const [exerciseList, setExerciseList] = useState([
-    { name: 'Incline Bench Press', setsReps: '4x8', weightLbs: 165 },
-    { name: 'Cable Lateral Raises', setsReps: '3x15', weightLbs: 25 },
+  const [duration, setDuration] = useState('');
+  const [calories, setCalories] = useState('');
+  const [exerciseList, setExerciseList] = useState<{ name: string; setsReps: string; weightLbs?: number }[]>([
+    { name: '', setsReps: '', weightLbs: 0 },
   ]);
 
   const handleAddWorkout = (e: React.FormEvent) => {

@@ -9,7 +9,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { TaskListType, TaskPriority, TaskStatus } from '../../types';
+import { TaskListType, TaskPriority, TaskStatus, TASK_LISTS, TASK_PRIORITIES } from '../../types';
 import { todayLocal } from '../../lib/recurrence';
 
 export const TasksSchedulingView: React.FC = () => {
@@ -202,12 +202,11 @@ export const TasksSchedulingView: React.FC = () => {
               className="rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-1.5 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
             >
               <option value="All Lists">All Lists</option>
-              <option value="Inbox">Inbox</option>
-              <option value="Work">Work</option>
-              <option value="Study">Study</option>
-              <option value="Health">Health</option>
-              <option value="Personal">Personal</option>
-              <option value="Holiday trip">Holiday trip</option>
+              {TASK_LISTS.map((list) => (
+                <option key={list} value={list}>
+                  {list}
+                </option>
+              ))}
             </select>
 
             <select
@@ -367,12 +366,11 @@ export const TasksSchedulingView: React.FC = () => {
                     onChange={(e) => setTaskList(e.target.value as TaskListType)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    <option value="Inbox">Inbox</option>
-                    <option value="Work">Work</option>
-                    <option value="Study">Study</option>
-                    <option value="Health">Health</option>
-                    <option value="Personal">Personal</option>
-                    <option value="Holiday trip">Holiday trip</option>
+                    {TASK_LISTS.map((list) => (
+                      <option key={list} value={list}>
+                        {list}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -384,9 +382,11 @@ export const TasksSchedulingView: React.FC = () => {
                     onChange={(e) => setTaskPriority(e.target.value as TaskPriority)}
                     className="w-full rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0] dark:bg-[#181A17] px-3 py-2 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                   >
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
+                    {TASK_PRIORITIES.map((p) => (
+                      <option key={p} value={p}>
+                        {p === 'LOW' ? 'Low' : p === 'MEDIUM' ? 'Medium' : 'High'}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>

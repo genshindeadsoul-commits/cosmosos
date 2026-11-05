@@ -1,6 +1,7 @@
 const pad = (n: number) => String(n).padStart(2, '0');
 export const dayKey = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`; // m is 0-based
 export const todayKey = (now = new Date()) => dayKey(now.getFullYear(), now.getMonth(), now.getDate());
+export const currentMonthKey = (now = new Date()) => `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
 export const daysInMonth = (y: number, m: number) => new Date(y, m + 1, 0).getDate();
 /** Blank cells before day 1. weekStart 1 = Monday-first, 0 = Sunday-first. */
 export const leadingBlanks = (y: number, m: number, weekStart: 0 | 1) => (new Date(y, m, 1).getDay() - weekStart + 7) % 7;

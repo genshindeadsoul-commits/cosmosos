@@ -19,7 +19,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useIntegrations } from '../../context/IntegrationsContext';
-import { ModuleType, TaskListType } from '../../types';
+import { ModuleType, TaskListType, TASK_LISTS, TASK_LIST_METADATA } from '../../types';
 
 interface NavItem {
   id: ModuleType;
@@ -37,14 +37,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'trackers', label: 'Custom Trackers', icon: Sparkles },
   { id: 'tasks', label: 'Tasks & Calendar', icon: CalendarDays },
   { id: 'settings', label: 'Settings', icon: Settings },
-];
-
-const TASK_LISTS: { name: TaskListType; dotColor: string }[] = [
-  { name: 'Inbox', dotColor: 'bg-purple-500' },
-  { name: 'Work', dotColor: 'bg-blue-500' },
-  { name: 'Study', dotColor: 'bg-amber-500' },
-  { name: 'Health', dotColor: 'bg-rose-500' },
-  { name: 'Holiday trip', dotColor: 'bg-pink-500' },
 ];
 
 export const Sidebar: React.FC = () => {
@@ -172,17 +164,18 @@ export const Sidebar: React.FC = () => {
               </span>
             </div>
             <div className="space-y-0.5">
-              {TASK_LISTS.map((list) => {
-                const count = tasks.filter((t) => t.list === list.name && t.status !== 'completed').length;
+              {TASK_LISTS.map((listName) => {
+                const meta = TASK_LIST_METADATA[listName];
+                const count = tasks.filter((t) => t.list === listName && t.status !== 'completed').length;
                 return (
                   <button
-                    key={list.name}
+                    key={listName}
                     onClick={() => handleNavClick('tasks')}
                     className="flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs text-[#6B7067] dark:text-[#A6AB9F] hover:bg-[#F0F1EB] dark:hover:bg-[#292D27]"
                   >
                     <div className="flex items-center gap-2.5">
-                      <span className={`h-2 w-2 rounded-full ${list.dotColor}`} />
-                      <span>{list.name}</span>
+                      <span className={`h-2 w-2 rounded-full ${meta.dotColor}`} />
+                      <span>{meta.label}</span>
                     </div>
                     <span className="text-[11px] text-[#8A8E85] font-mono">{count}</span>
                   </button>

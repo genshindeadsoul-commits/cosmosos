@@ -36,6 +36,9 @@ import {
   TaskPriority,
   TransactionType,
   ExerciseEntry,
+  TASK_LISTS,
+  TASK_PRIORITIES,
+  EXPENSE_CATEGORIES,
 } from '../../types';
 
 interface DayDetailsModalProps {
@@ -53,6 +56,8 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
 }) => {
   const {
     tasks,
+    events,
+    deleteEvent,
     addTask,
     updateTask,
     deleteTask,
@@ -130,6 +135,10 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
     () => tasks.filter((t) => t.dueDate === currentDateKey),
     [tasks, currentDateKey]
   );
+  const dayEvents = useMemo(
+    () => events.filter((e) => e.date === currentDateKey),
+    [events, currentDateKey]
+  );
   const completedDayTasks = useMemo(
     () => dayTasks.filter((t) => t.status === 'completed'),
     [dayTasks]
@@ -205,12 +214,10 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
 
   // Workout form state
   const [isAddingWorkout, setIsAddingWorkout] = useState(false);
-  const [workoutTitle, setWorkoutTitle] = useState('Strength Training');
-  const [workoutDuration, setWorkoutDuration] = useState('45');
-  const [workoutCalories, setWorkoutCalories] = useState('350');
-  const [workoutExercises, setWorkoutExercises] = useState<ExerciseEntry[]>([
-    { name: 'Bench Press', setsReps: '3x10', weightLbs: 135 },
-  ]);
+  const [workoutTitle, setWorkoutTitle] = useState('');
+  const [workoutDuration, setWorkoutDuration] = useState('');
+  const [workoutCalories, setWorkoutCalories] = useState('');
+  const [workoutExercises, setWorkoutExercises] = useState<ExerciseEntry[]>([]);
 
   const handleAddWorkoutSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,6 +229,10 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
       calories: workoutCalories ? parseInt(workoutCalories, 10) : null,
       exercises: workoutExercises.filter((ex) => ex.name.trim()),
     });
+    setWorkoutTitle('');
+    setWorkoutDuration('');
+    setWorkoutCalories('');
+    setWorkoutExercises([]);
     setIsAddingWorkout(false);
   };
 
@@ -339,7 +350,7 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
           <div className="flex items-center gap-1.5 overflow-x-auto pt-3 -mb-1 scrollbar-none">
             {[
               { id: 'overview', label: 'Overview', icon: Sparkles, count: undefined },
-              { id: 'tasks', label: 'Tasks', icon: CheckCircle2, count: dayTasks.length },
+              { id: 'tasks', label: 'Tasks & Schedule', icon: CheckCircle2, count: dayTasks.length + dayEvents.length },
               { id: 'notes', label: 'Notes', icon: BookOpen, count: dayNotes.length },
               { id: 'workout', label: 'Workout', icon: Dumbbell, count: dayWorkouts.length },
               { id: 'expenses', label: 'Expenses', icon: CreditCard, count: dayTransactions.length },
@@ -501,6 +512,43 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
                 )}
               </div>
 
+              {/* Scheduled Events Preview (if any) */}
+              {dayEvents.length > 0 && (
+                <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#252821] dark:text-[#ECEDE6]">
+                      Calendar Events ({dayEvents.length})
+                    </span>
+                    <button
+                      onClick={() => handleTabChange('tasks')}
+                      className="text-xs font-semibold text-[#526B55] dark:text-[#A8BDA1] hover:underline flex items-center gap-1"
+                    >
+                      <span>View schedule</span>
+                      <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <div className="space-y-1.5">
+                    {dayEvents.slice(0, 3).map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="flex items-center justify-between gap-2 p-2 rounded-lg bg-[#F5F5F0]/50 dark:bg-[#181A17]/50 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[#252821] dark:text-[#ECEDE6] truncate">{ev.title}</p>
+                          <p className="text-[10px] text-[#8A8E85]">
+                            {ev.startTime ? `${ev.startTime}${ev.endTime ? ` - ${ev.endTime}` : ''}` : 'All day'}
+                            {ev.location ? ` · ${ev.location}` : ''}
+                          </p>
+                        </div>
+                        <span className="shrink-0 rounded bg-[#E8EEE6] dark:bg-[#303B2E] px-1.5 py-0.5 text-[10px] font-semibold text-[#3D5240] dark:text-[#A8BDA1]">
+                          {ev.source === 'google_calendar' ? 'Google' : 'Local'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Workout Summary Card */}
               <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -644,28 +692,26 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
                   </button>
                 </div>
                 <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[11px] text-[#8A8E85]">List:</span>
-                    {(['Work', 'Personal', 'Study', 'Health', 'Inbox'] as TaskListType[]).map(
-                      (lst) => (
-                        <button
-                          key={lst}
-                          type="button"
-                          onClick={() => setTaskList(lst)}
-                          className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors ${
-                            taskList === lst
-                              ? 'bg-[#3D5240] text-white dark:bg-[#526B55]'
-                              : 'bg-white dark:bg-[#20231F] border border-[#DFE1D9] dark:border-[#383D35] text-[#6B7067] dark:text-[#A6AB9F]'
-                          }`}
-                        >
-                          {lst}
-                        </button>
-                      )
-                    )}
+                    {TASK_LISTS.map((lst) => (
+                      <button
+                        key={lst}
+                        type="button"
+                        onClick={() => setTaskList(lst)}
+                        className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                          taskList === lst
+                            ? 'bg-[#3D5240] text-white dark:bg-[#526B55]'
+                            : 'bg-white dark:bg-[#20231F] border border-[#DFE1D9] dark:border-[#383D35] text-[#6B7067] dark:text-[#A6AB9F]'
+                        }`}
+                      >
+                        {lst}
+                      </button>
+                    ))}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[11px] text-[#8A8E85]">Priority:</span>
-                    {(['LOW', 'MEDIUM', 'HIGH'] as TaskPriority[]).map((p) => (
+                    {TASK_PRIORITIES.map((p) => (
                       <button
                         key={p}
                         type="button"
@@ -756,6 +802,42 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
                   })
                 )}
               </div>
+
+              {/* Scheduled Calendar Events */}
+              {dayEvents.length > 0 && (
+                <div className="space-y-2 pt-3 border-t border-[#DFE1D9] dark:border-[#383D35]">
+                  <div className="flex items-center justify-between text-xs font-bold text-[#6B7067] dark:text-[#A6AB9F]">
+                    <span>Scheduled Events ({dayEvents.length})</span>
+                  </div>
+                  <div className="space-y-2">
+                    {dayEvents.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F]"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-[#252821] dark:text-[#ECEDE6] truncate">{ev.title}</p>
+                          <div className="flex items-center gap-2 text-[10px] text-[#8A8E85] pt-0.5">
+                            {ev.startTime && <span>{ev.startTime}{ev.endTime ? ` - ${ev.endTime}` : ''}</span>}
+                            {ev.location && <span>• {ev.location}</span>}
+                            <span className="rounded bg-[#E8EEE6] dark:bg-[#303B2E] text-[#3D5240] dark:text-[#A8BDA1] px-1 text-[9px] font-bold">
+                              {ev.source === 'google_calendar' ? 'Google Calendar' : 'Local Event'}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteEvent(ev.id)}
+                          aria-label={`Delete event ${ev.title}`}
+                          className="shrink-0 p-1.5 text-[#8A8E85] hover:text-rose-500 transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1126,17 +1208,7 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
                       onChange={(e) => setTxCategory(e.target.value as ExpenseCategory)}
                       className="rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-white dark:bg-[#20231F] px-3 py-1.5 text-xs text-[#252821] dark:text-[#ECEDE6] focus:outline-none"
                     >
-                      {[
-                        'Groceries',
-                        'Dining',
-                        'Transportation',
-                        'Utilities',
-                        'Savings',
-                        'Salary',
-                        'Freelance',
-                        'Entertainment',
-                        'Miscellaneous',
-                      ].map((cat) => (
+                      {EXPENSE_CATEGORIES.map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
                         </option>

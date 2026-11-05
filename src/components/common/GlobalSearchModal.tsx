@@ -134,12 +134,15 @@ export const GlobalSearchModal: React.FC = () => {
 
     // Expenses
     transactions.forEach((tx) => {
-      if (tx.description.toLowerCase().includes(q) || tx.category.toLowerCase().includes(q)) {
+      const titleMatches = tx.title && tx.title.toLowerCase().includes(q);
+      const descMatches = tx.description.toLowerCase().includes(q);
+      const catMatches = tx.category.toLowerCase().includes(q);
+      if (titleMatches || descMatches || catMatches) {
         items.push({
           id: `tx-${tx.id}`,
           module: 'expenses',
-          title: tx.description,
-          subtitle: `${tx.category} · ₹${tx.amount.toLocaleString()} · ${tx.date}`,
+          title: tx.title || tx.description,
+          subtitle: `${tx.category} · ₹${tx.amount.toLocaleString()} · ${tx.date}${tx.title && tx.title !== tx.description ? ` · ${tx.description}` : ''}`,
           badge: tx.type === 'income' ? 'Income' : 'Expense',
           icon: Wallet,
         });

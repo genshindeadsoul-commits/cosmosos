@@ -83,9 +83,7 @@ export const TablesView: React.FC = () => {
         { id: 'date', name: 'Date', type: 'date' },
         { id: 'status', name: 'Status', type: 'status', options: ['ACTIVE', 'PENDING', 'DONE'] },
       ],
-      rows: [
-        { index: 1, name: 'Sample Item 1', date: new Date().toISOString().slice(0, 10), status: 'ACTIVE' },
-      ],
+      rows: [],
     });
     setNewTableName('');
     setNewTableDesc('');

@@ -26,7 +26,7 @@ import { useAuth } from './AuthContext';
 import { nextOccurrence } from '../lib/recurrence';
 import type { ImportedEvent } from '../lib/integrationsApi';
 import { supabase } from '../lib/supabase';
-import { dateNoteTitle, dateNoteContent, isUntouchedDateNote } from '../lib/dates';
+import { dateNoteTitle, dateNoteContent, isUntouchedDateNote, todayKey } from '../lib/dates';
 
 interface Toast {
   id: string;
@@ -1042,7 +1042,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Tracker Handlers
   const addTrackerEntry = (trackerId: string, value: number, date?: string, notes?: string) => {
-    const entryDate = date || new Date().toISOString().slice(0, 10);
+    const entryDate = date || todayKey();
     const newEntry = {
       id: newId(),
       date: entryDate,

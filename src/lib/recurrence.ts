@@ -1,7 +1,9 @@
+import { todayKey } from './dates';
+
 export type Recurrence = 'daily' | 'weekly' | 'monthly';
 
 const pad = (n: number) => String(n).padStart(2, '0');
-export const todayLocal = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const todayLocal = todayKey;
 
 /**
  * Next due date after `iso` (YYYY-MM-DD). Pure calendar math (no timezone shifts).
