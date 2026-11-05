@@ -70,6 +70,18 @@ export async function applyChanges(plan: ChangePlan): Promise<SaveFailure[]> {
           error = null;
         }
       }
+      // Schema cache fallback for migration 0009: preserve data_tables if archived/metadata columns not yet in DB
+      if (error && t === 'data_tables' && (/(archived|metadata).*schema cache/i.test(error.message) || /column.*(archived|metadata).*does not exist/i.test(error.message))) {
+        const stripped = rows.map((r) => {
+          const { archived, metadata, ...rest } = r as any;
+          return rest;
+        });
+        const retry = await sb.from(t).upsert(stripped as never, { onConflict: PK[t].join(',') });
+        if (!retry.error) {
+          console.warn('Saved data_tables without archived/metadata columns (database needs migration 0009_tables_archive_metadata.sql)');
+          error = null;
+        }
+      }
       if (error) fail(t, error);
     } catch (e) { fail(t, { message: (e as Error).message }); }          // network exceptions
   }

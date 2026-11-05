@@ -97,7 +97,13 @@ interface AppContextType {
   addTableRows: (tableId: string, rows: Record<string, any>[]) => void;
   updateTableRow: (tableId: string, rowId: string, row: Record<string, any>) => void;
   deleteTableRow: (tableId: string, rowId: string) => void;
+  duplicateTableRow: (tableId: string, rowId: string) => void;
   addTableCollection: (table: NewTable) => void;
+  updateTableCollection: (tableId: string, updates: Partial<TableCollection>) => void;
+  deleteTableCollection: (tableId: string) => void;
+  duplicateTableCollection: (tableId: string, includeRows: boolean) => void;
+  archiveTableCollection: (tableId: string) => void;
+  restoreTableCollection: (tableId: string) => void;
   
   // Transactions & Subscriptions
   addTransaction: (tx: Omit<Transaction, 'id'>) => void;
@@ -952,17 +958,134 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Row deleted', 'info');
   };
 
+  const duplicateTableRow = (tableId: string, rowId: string) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tables: prev.tables.map((tbl) => {
+          if (tbl.id === tableId) {
+            const rowIndex = tbl.rows.findIndex((r) => r.id === rowId);
+            if (rowIndex === -1) return tbl;
+            const original = tbl.rows[rowIndex];
+            const duplicate = {
+              ...original,
+              id: newId(),
+              index: typeof original.index === 'number' ? tbl.rows.length + 1 : undefined,
+            };
+            const nextRows = [...tbl.rows];
+            nextRows.splice(rowIndex + 1, 0, duplicate);
+            return {
+              ...tbl,
+              rows: nextRows,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return tbl;
+        }),
+      };
+    });
+    showToast('Row duplicated', 'success');
+  };
+
   const addTableCollection = (tableData: NewTable) => {
     const newTbl: TableCollection = {
       ...tableData,
       id: newId(),
       // Row ids are always assigned here: callers pass content only (a caller-made id like "r-123" is not a UUID).
-      rows: tableData.rows.map((r, i) => ({ ...r, id: newId(), index: typeof r.index === 'number' ? r.index : i + 1 })),
+      rows: (tableData.rows || []).map((r, i) => ({ ...r, id: newId(), index: typeof r.index === 'number' ? r.index : i + 1 })),
       updatedAt: new Date().toISOString(),
+      archived: false,
+      metadata: tableData.metadata ?? {},
     };
     setData((prev) => (prev ? { ...prev, tables: [...prev.tables, newTbl] } : null));
     setSelectedTableId(newTbl.id);
     showToast(`Table "${newTbl.name}" created`, 'success');
+  };
+
+  const updateTableCollection = (tableId: string, updates: Partial<TableCollection>) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tables: prev.tables.map((tbl) => {
+          if (tbl.id === tableId) {
+            return {
+              ...tbl,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return tbl;
+        }),
+      };
+    });
+  };
+
+  const deleteTableCollection = (tableId: string) => {
+    setData((prev) => {
+      if (!prev) return null;
+      const target = prev.tables.find((t) => t.id === tableId);
+      const name = target?.name || 'Table';
+      const remaining = prev.tables.filter((t) => t.id !== tableId);
+      if (selectedTableId === tableId) {
+        const nextActive = remaining.find((t) => !t.archived) || remaining[0];
+        setSelectedTableId(nextActive?.id || '');
+      }
+      return {
+        ...prev,
+        tables: remaining,
+      };
+    });
+    showToast('Table permanently deleted', 'info');
+  };
+
+  const duplicateTableCollection = (tableId: string, includeRows: boolean) => {
+    const tbl = data?.tables.find((t) => t.id === tableId);
+    if (!tbl) return;
+    const duplicated: TableCollection = {
+      id: newId(),
+      name: `${tbl.name} (Copy)`,
+      description: tbl.description || '',
+      columns: tbl.columns.map((c) => ({ ...c })),
+      rows: includeRows ? tbl.rows.map((r, i) => ({ ...r, id: newId(), index: i + 1 })) : [],
+      updatedAt: new Date().toISOString(),
+      archived: false,
+      metadata: tbl.metadata ? { ...tbl.metadata } : {},
+    };
+    setData((prev) => (prev ? { ...prev, tables: [...prev.tables, duplicated] } : null));
+    setSelectedTableId(duplicated.id);
+    showToast(`Table duplicated ${includeRows ? 'with records' : '(structure only)'}`, 'success');
+  };
+
+  const archiveTableCollection = (tableId: string) => {
+    setData((prev) => {
+      if (!prev) return null;
+      const target = prev.tables.find((t) => t.id === tableId);
+      const name = target?.name || 'Table';
+      const updated = prev.tables.map((t) => (t.id === tableId ? { ...t, archived: true, updatedAt: new Date().toISOString() } : t));
+      if (selectedTableId === tableId) {
+        const nextActive = updated.find((t) => !t.archived && t.id !== tableId) || updated[0];
+        setSelectedTableId(nextActive?.id || '');
+      }
+      return {
+        ...prev,
+        tables: updated,
+      };
+    });
+    showToast('Table archived', 'info');
+  };
+
+  const restoreTableCollection = (tableId: string) => {
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tables: prev.tables.map((t) => (t.id === tableId ? { ...t, archived: false, updatedAt: new Date().toISOString() } : t)),
+      };
+    });
+    setSelectedTableId(tableId);
+    showToast('Table restored from archive', 'success');
   };
 
   // Transaction Handlers
@@ -1380,7 +1503,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addTableRows,
         updateTableRow,
         deleteTableRow,
+        duplicateTableRow,
         addTableCollection,
+        updateTableCollection,
+        deleteTableCollection,
+        duplicateTableCollection,
+        archiveTableCollection,
+        restoreTableCollection,
         addTransaction,
         addTransactions,
         updateTransaction,

@@ -79,16 +79,40 @@ export interface Note {
   updatedAt: string;
 }
 
+export type TableColumnType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'checkbox'
+  | 'select'
+  | 'multi-select'
+  | 'url'
+  | 'currency'
+  | 'status'
+  | 'link';
+
 export interface TableColumn {
   id: string;
   name: string;
-  type: 'text' | 'number' | 'date' | 'status' | 'link';
+  type: TableColumnType;
   options?: string[];
+  currencySymbol?: string;
+  hidden?: boolean;
+  width?: number;
 }
 
 export interface TableRow {
   id: string;
   [key: string]: any;
+}
+
+export interface TableMetadata {
+  view?: 'table' | 'list' | 'board';
+  groupByColumnId?: string;
+  calendarEnabled?: boolean;
+  calendarDateFieldId?: string;
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
 }
 
 export interface TableCollection {
@@ -98,6 +122,8 @@ export interface TableCollection {
   columns: TableColumn[];
   rows: TableRow[];
   updatedAt: string;
+  archived?: boolean;
+  metadata?: TableMetadata;
 }
 
 export type TransactionType = 'income' | 'expense' | 'transfer';
@@ -322,4 +348,7 @@ export interface GmailMessage {
 }
 
 /** Content for a new table. Row ids are intentionally absent: the app assigns real UUIDs. */
-export type NewTable = Omit<TableCollection, 'id' | 'updatedAt' | 'rows'> & { rows: Omit<TableRow, 'id'>[] };
+export type NewTable = Omit<TableCollection, 'id' | 'updatedAt' | 'rows'> & {
+  rows?: Omit<TableRow, 'id'>[];
+  metadata?: TableMetadata;
+};

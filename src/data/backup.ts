@@ -267,6 +267,8 @@ export function parseBackup(json: string): ParseResult {
     t.id = fix(t.id);
     t.columns = Array.isArray(t.columns) ? t.columns : [];
     t.rows = (Array.isArray(t.rows) ? t.rows : []).map((r) => ({ ...r, id: fix(r.id) }));
+    if (t.archived !== undefined) t.archived = !!t.archived;
+    if (t.metadata !== undefined) t.metadata = t.metadata && typeof t.metadata === 'object' ? t.metadata : {};
   });
 
   // Reject rows the database would refuse, so one bad record can't fail the whole save later.

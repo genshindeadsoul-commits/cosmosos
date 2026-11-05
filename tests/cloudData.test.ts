@@ -52,6 +52,30 @@ test('deleting a table row and reordering is detected', () => {
   assert.equal(plan.upserts.table_rows?.length, 1); // remaining row's position changed 1 -> 0
 });
 
+test('deleting an entire table generates deletes for data_tables and all associated table_rows', () => {
+  const a = sample();
+  const b = structuredClone(a);
+  b.tables = [];
+  const plan = planChanges(toRows(a), toRows(b));
+  assert.equal(plan.deletes.data_tables?.length, 1);
+  assert.equal(plan.deletes.data_tables?.[0].id, tblId);
+  assert.equal(plan.deletes.table_rows?.length, 2);
+});
+
+test('table archiving and view metadata roundtrip through toRows and fromRows', () => {
+  const a = sample();
+  a.tables[0].archived = true;
+  a.tables[0].metadata = { view: 'board', calendarEnabled: true, groupByColumnId: 'c1' };
+  const rows = toRows(a);
+  assert.equal(rows.data_tables[0].archived, true);
+  assert.deepEqual(rows.data_tables[0].metadata, { view: 'board', calendarEnabled: true, groupByColumnId: 'c1' });
+
+  const restored = fromRows(rows);
+  assert.equal(restored.tables[0].archived, true);
+  assert.equal(restored.tables[0].metadata?.view, 'board');
+  assert.equal(restored.tables[0].metadata?.calendarEnabled, true);
+});
+
 test('same data twice produces no duplicate writes', () => {
   const a = sample();
   assert.equal(planChanges(toRows(a), toRows(structuredClone(a))).isEmpty, true);

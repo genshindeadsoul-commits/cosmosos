@@ -18,6 +18,7 @@ import {
   MapPin,
   Tag,
   ArrowRight,
+  Table as TableIcon,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { usePrefs, CalendarTab } from '../../context/PrefsContext';
@@ -73,6 +74,8 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
     deleteTransaction,
     habits,
     toggleHabitCheckin,
+    tables,
+    setSelectedTableId,
     setActiveModule,
   } = useApp();
 
@@ -145,6 +148,39 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
     return habits.filter((h) => !!h.checkins[currentDateKey]);
   }, [habits, currentDateKey]);
 
+  // Table records with date matching currentDateKey where table has calendarEnabled true
+  const dayTableRecords = useMemo(() => {
+    const list: {
+      tableId: string;
+      tableName: string;
+      rowId: string;
+      title: string;
+      status?: string;
+    }[] = [];
+    tables.forEach((tbl) => {
+      if (tbl.archived) return;
+      const isEnabled = tbl.metadata?.calendarEnabled;
+      if (!isEnabled) return;
+      const dateCol = tbl.columns.find((c) => c.type === 'date');
+      if (!dateCol) return;
+      const titleCol = tbl.columns.find((c) => c.type === 'text' && c.id !== 'index') || tbl.columns[0];
+      const statusCol = tbl.columns.find((c) => c.type === 'select' || c.type === 'status');
+
+      tbl.rows.forEach((r) => {
+        if (r[dateCol.id] === currentDateKey) {
+          list.push({
+            tableId: tbl.id,
+            tableName: tbl.name,
+            rowId: r.id,
+            title: String(r[titleCol.id] || `Record #${r.index || ''}`),
+            status: statusCol ? String(r[statusCol.id] || '') : undefined,
+          });
+        }
+      });
+    });
+    return list;
+  }, [tables, currentDateKey]);
+
   // Net cash flow for the day
   const dayIncome = useMemo(
     () => dayTransactions.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0),
@@ -162,7 +198,8 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
     dayNotes.length +
     dayWorkouts.length +
     dayTransactions.length +
-    dayHabits.length;
+    dayHabits.length +
+    dayTableRecords.length;
 
   const isCurrentDayToday = currentDateKey === todayKey();
 
@@ -785,6 +822,48 @@ export const DayDetailsModal: React.FC<DayDetailsModalProps> = ({
                     <span className="text-[11px] font-bold text-[#526B55] dark:text-[#A8BDA1] shrink-0">
                       {h.streak > 0 ? `${h.streak}d streak` : 'Completed'}
                     </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Table Records (if table sync enabled) */}
+          {dayTableRecords.length > 0 && (
+            <div className="rounded-xl border border-[#DFE1D9] dark:border-[#383D35] bg-[#FFFFFF] dark:bg-[#20231F] p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-[#DFE1D9] dark:border-[#383D35] pb-2">
+                <div className="flex items-center gap-2">
+                  <TableIcon className="h-4 w-4 text-[#526B55] dark:text-[#A8BDA1]" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#252821] dark:text-[#ECEDE6]">
+                    Database & Table Records ({dayTableRecords.length})
+                  </h3>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {dayTableRecords.map((rec) => (
+                  <div
+                    key={`${rec.tableId}-${rec.rowId}`}
+                    onClick={() => {
+                      setSelectedTableId(rec.tableId);
+                      setActiveModule('tables');
+                      onClose();
+                    }}
+                    className="flex items-center justify-between rounded-lg border border-[#DFE1D9] dark:border-[#383D35] bg-[#F5F5F0]/60 dark:bg-[#181A17]/60 p-2.5 text-xs hover:border-[#526B55] cursor-pointer transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                      <span className="font-semibold text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-[#20231F] border border-[#DFE1D9] dark:border-[#383D35] text-[#526B55] dark:text-[#A8BDA1] shrink-0">
+                        {rec.tableName}
+                      </span>
+                      <span className="font-bold text-[#252821] dark:text-[#ECEDE6] truncate">
+                        {rec.title}
+                      </span>
+                    </div>
+                    {rec.status && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 shrink-0">
+                        {rec.status}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>

@@ -92,7 +92,14 @@ export function toRows(d: CosmosAppData): RowSet {
     custom_trackers: d.trackers.map((t) => ({ id: t.id, name: t.name, unit: t.unit ?? '', target_per_day: t.targetPerDay })),
     tracker_entries: d.trackers.flatMap((t) =>
       t.entries.map((e) => ({ id: e.id, tracker_id: t.id, entry_date: e.date, value: e.value, notes: nz(e.notes) }))),
-    data_tables: d.tables.map((t) => ({ id: t.id, name: t.name, description: t.description ?? '', columns: t.columns })),
+    data_tables: d.tables.map((t) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description ?? '',
+      columns: t.columns,
+      archived: !!t.archived,
+      metadata: t.metadata ?? {},
+    })),
     table_rows: d.tables.flatMap((t) =>
       t.rows.map((r, i) => { const { id, ...rest } = r; return { id, table_id: t.id, position: i, data: rest }; })),
   };
@@ -193,8 +200,14 @@ export function fromRows(r: RowSet, today = new Date()): CosmosAppData {
       id: s(t.id), name: s(t.name), unit: s(t.unit), targetPerDay: num(t.target_per_day), entries: entriesByTracker.get(s(t.id)) ?? [],
     })),
     tables: r.data_tables.map((t) => ({
-      id: s(t.id), name: s(t.name), description: s(t.description), columns: (t.columns as TableCollection['columns']) ?? [],
-      rows: (rowsByTable.get(s(t.id)) ?? []) as TableCollection['rows'], updatedAt: s(t.updated_at),
+      id: s(t.id),
+      name: s(t.name),
+      description: s(t.description),
+      columns: (t.columns as TableCollection['columns']) ?? [],
+      rows: (rowsByTable.get(s(t.id)) ?? []) as TableCollection['rows'],
+      updatedAt: s(t.updated_at),
+      archived: !!t.archived,
+      metadata: (t.metadata as TableCollection['metadata']) ?? {},
     })),
   };
 }

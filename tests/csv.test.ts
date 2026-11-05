@@ -49,3 +49,24 @@ test('plan: unmapped table columns import as empty, not undefined', () => {
   const p = planCsvImport([['only name']], { 0: 'c1' }, cols, []);
   assert.deepEqual(p.valid[0], { c1: 'only name', c2: '', c3: '', c4: '' });
 });
+
+test('plan: parses and validates currency and checkbox columns correctly', () => {
+  const customCols = [
+    { id: 'c1', name: 'Item', type: 'text' as const },
+    { id: 'c2', name: 'Price', type: 'currency' as const, currencySymbol: '₹' },
+    { id: 'c3', name: 'InStock', type: 'checkbox' as const },
+  ];
+  const m = guessMapping(['Item', 'Price', 'InStock'], customCols);
+  const p = planCsvImport([
+    ['Monitor', '₹ 24,999.50', 'yes'],
+    ['Keyboard', '$1,250', 'true'],
+    ['Broken Price', 'invalid', 'no'],
+  ], m, customCols, []);
+
+  assert.equal(p.valid.length, 2);
+  assert.equal(p.valid[0].c2, '24999.5');
+  assert.equal(p.valid[0].c3, 'true');
+  assert.equal(p.valid[1].c2, '1250');
+  assert.equal(p.errors.length, 1);
+  assert.match(p.errors[0].message, /currency amount/);
+});

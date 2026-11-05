@@ -79,8 +79,21 @@ export function planCsvImport(dataRows: string[][], mapping: Mapping, columns: T
       if (raw === '') continue;
       if (col.type === 'number' && !Number.isFinite(Number(raw.replace(/,/g, '')))) err = `“${raw}” isn’t a number (${col.name})`;
       else if (col.type === 'number') rec[id] = String(Number(raw.replace(/,/g, '')));
+      if (col.type === 'currency') {
+        const clean = raw.replace(/[^0-9.-]/g, '');
+        if (!clean || !Number.isFinite(Number(clean))) err = `“${raw}” isn’t a valid currency amount (${col.name})`;
+        else rec[id] = String(Number(clean));
+      }
+      if (col.type === 'checkbox') {
+        const lower = raw.toLowerCase();
+        rec[id] = lower === 'true' || lower === '1' || lower === 'yes' || lower === 'checked' ? 'true' : 'false';
+      }
       if (col.type === 'date' && !isRealDate(raw)) err = `“${raw}” isn’t a valid date, use YYYY-MM-DD (${col.name})`;
-      if (col.type === 'status' && col.options?.length && !col.options.includes(raw)) err = `“${raw}” isn’t one of ${col.options.join(', ')} (${col.name})`;
+      if ((col.type === 'status' || col.type === 'select') && col.options?.length) {
+        const match = col.options.find((o) => o.toLowerCase() === raw.toLowerCase());
+        if (!match) err = `“${raw}” isn’t one of ${col.options.join(', ')} (${col.name})`;
+        else rec[id] = match;
+      }
     }
     columns.forEach((c) => { if (!(c.id in rec)) rec[c.id] = ''; });
     if (err) { plan.errors.push({ line, message: err }); return; }
